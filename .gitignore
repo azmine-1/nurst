@@ -1,1 +1,24 @@
+# === Rust Defaults ===
 /target
+**/*.rs.bk
+**/*.swp
+Cargo.lock
+
+# === IDE / Editor junk ===
+.vscode/
+.idea/
+*.iml
+*.suo
+*.user
+*.log
+*.tmp
+
+# === OS crap ===
+.DS_Store
+Thumbs.db
+
+# === NES Emulator Specific ===
+roms/
+*.nes
+*.log
+output.log

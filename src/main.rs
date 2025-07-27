@@ -1,13 +1,22 @@
 mod cpu;
+mod memory;
+mod bus;
 
 use cpu::CPU;
+use bus::Bus;
+use std::fs;
 
 fn main() {
-    let mut cpu = CPU::new(); 
+    println!("Starting NURST");
 
-    cpu.load(&[0xA9, 0x01, 0xA9, 0x95], 0x8000); 
+    let data = fs::read("roms/nestest.nes").expect("Failed to read ROM");
+    let rom = data[16..].to_vec(); // skip 16-byte iNES header
 
-    println!("Firt opcode: 0x{:02x}", cpu.fetch()); 
-    println!("Second opcode: 0x{:02x}", cpu.fetch());
-    
+    let mut bus = Bus::new(rom);
+    let mut cpu = CPU::new();
+    cpu.reset(&bus);
+
+    for _ in 0..10 {
+        cpu.step(&mut bus);
+    }
 }
