@@ -10,6 +10,110 @@ pub struct CPU {
     pub cycles: usize,
 }
 
+pub enum Op {
+    // Load/Store Operations
+    LDA,  // Load Accumulator
+    LDX,  // Load X Register
+    LDY,  // Load Y Register
+    STA,  // Store Accumulator
+    STX,  // Store X Register
+    STY,  // Store Y Register
+    
+    // Arithmetic Operations
+    ADC,  // Add with Carry
+    SBC,  // Subtract with Carry
+    
+    // Increment/Decrement Operations
+    INC,  // Increment Memory
+    INX,  // Increment X Register
+    INY,  // Increment Y Register
+    DEC,  // Decrement Memory
+    DEX,  // Decrement X Register
+    DEY,  // Decrement Y Register
+    
+    // Logical Operations
+    AND,  // Logical AND
+    ORA,  // Logical OR (Inclusive)
+    EOR,  // Exclusive OR
+    
+    // Shift and Rotate Operations
+    ASL,  // Arithmetic Shift Left
+    LSR,  // Logical Shift Right
+    ROL,  // Rotate Left
+    ROR,  // Rotate Right
+    
+    // Branch Operations
+    BCC,  // Branch if Carry Clear
+    BCS,  // Branch if Carry Set
+    BEQ,  // Branch if Equal (Zero Set)
+    BMI,  // Branch if Minus (Negative Set)
+    BNE,  // Branch if Not Equal (Zero Clear)
+    BPL,  // Branch if Plus (Negative Clear)
+    BVC,  // Branch if Overflow Clear
+    BVS,  // Branch if Overflow Set
+    
+    // Jump and Subroutine Operations
+    JMP,  // Jump
+    JSR,  // Jump to Subroutine
+    RTS,  // Return from Subroutine
+    RTI,  // Return from Interrupt
+    
+    // Compare Operations
+    CMP,  // Compare Accumulator
+    CPX,  // Compare X Register
+    CPY,  // Compare Y Register
+    
+    // Bit Operations
+    BIT,  // Bit Test
+    
+    // Transfer Operations
+    TAX,  // Transfer A to X
+    TAY,  // Transfer A to Y
+    TXA,  // Transfer X to A
+    TYA,  // Transfer Y to A
+    TSX,  // Transfer Stack Pointer to X
+    TXS,  // Transfer X to Stack Pointer
+    
+    // Stack Operations
+    PHA,  // Push Accumulator
+    PHP,  // Push Processor Status
+    PLA,  // Pull Accumulator
+    PLP,  // Pull Processor Status
+    
+    // Status Flag Operations
+    CLC,  // Clear Carry Flag
+    CLD,  // Clear Decimal Flag
+    CLI,  // Clear Interrupt Disable Flag
+    CLV,  // Clear Overflow Flag
+    SEC,  // Set Carry Flag
+    SED,  // Set Decimal Flag
+    SEI,  // Set Interrupt Disable Flag
+    
+    // System Operations
+    BRK,  // Break (Software Interrupt)
+    NOP,  // No Operation
+    
+    // Illegal/Unofficial Opcodes (commonly used)
+    LAX,  // Load A and X
+    SAX,  // Store A AND X
+    DCP,  // Decrement and Compare
+    ISC,  // Increment and Subtract with Carry
+    SLO,  // Shift Left and OR
+    RLA,  // Rotate Left and AND
+    SRE,  // Shift Right and EOR
+    RRA,  // Rotate Right and Add
+    ANC,  // AND and set Carry
+    ALR,  // AND and Logical Shift Right
+    ARR,  // AND and Rotate Right
+    XAA,  // Transfer X to A and AND
+    AXS,  // AND X with A and Subtract
+    AHX,  // AND A with X and Store
+    SHY,  // Store Y AND (high byte of address + 1)
+    SHX,  // Store X AND (high byte of address + 1)
+    TAS,  // Transfer A AND X to Stack Pointer
+    LAS,  // Load A, X, and Stack Pointer
+}
+
 impl CPU {
     pub fn new() -> Self {
         CPU{
@@ -39,6 +143,15 @@ impl CPU {
         byte
     }
 
+    pub fn decode(&mut self, opcode: u8, mem: &mut impl Memory){
+        match opcode {
+            0xA9 => {
+                let value = self.fetch(mem);
+                self.ac = value; 
+                self.pc += 1;
+            }
+        }
+    }
     pub fn tick(&mut self, mem: &mut impl Memory) {
         let opcode = self.fetch(mem);
         self.execute(opcode, mem);
