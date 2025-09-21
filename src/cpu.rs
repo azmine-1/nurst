@@ -227,6 +227,41 @@ impl CPU {
         }
     }
 
+    pub fn execute(&mut self, bus: &mut Bus, instruction: Instruction){
+        match instruction.opcode {
+            Opcode::LDA => {
+                let value = match instruction.addressing_mode { 
+                    AddressingMode::Immediate => self.fetch(bus),
+                    AddressingMode::ZeroPage => { 
+                        let addr = self.fetch(bus) as u16;
+                        self.read(bus, addr)
+                    }
+
+                    AddressingMode::Absolute => { 
+                        let low = self.fetch(bus) as u16; 
+                        let high = self.fetch(bus) as u16; 
+                        let addr = (high << 8) | low; 
+                        self.read(bus, addr)
+                    }
+                    - => 0,
+                };
+                self.accumulator = value; 
+                self.set_flag(Flags::Z, self.accumulator == 0)
+                self.set_flag(Flags::N, self.accumulator & 0x80 != 0)
+            }
+        
+        }
+    }
+
+    pub fn set_flag(&mut self, flag: Flags, condition: bool){
+        if condition {
+            self.status |= flag as u8;
+        } else { 
+            self.status &= !(flag as u8);
+        }
+        
+    }
+
     pub fn reset(&mut self) {
         self.accumulator = 0;
         self.register_x = 0;

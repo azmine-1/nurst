@@ -1,23 +1,27 @@
 pub struct Bus { 
-    pub address: u16, 
-    pub bReadOnly: bool, 
-    pub ram: [u8; 10 * 1024]
+    ram: [u8; 2048], 
+    ppu_registers: [u8; 8],
+    apu_io: [u8; 24],
+    cartridge_rom: [u8; 32768],
 }
 
 impl Bus { 
     pub fn new() -> Self {
-        Self { 
-            address: 0, 
-            bReadOnly: false, 
-            ram: [0; 10 * 1024]
+        Bus { 
+            ram: [0; 2048],
+            ppu_registers: [0; 8],
+            apu_io: [0; 24].
+            cartridge_rom: [0; 32768]
         }
     }
     
-    pub fn write(&mut self, addr: u16, data: u8){
-        if addr >= 0x0000 && addr <= 0xFFFF {
-            self.ram[addr as usize] = data; 
+    pub fn read(&self, addr: u16) -> u8{
+        match addr { 
+            0x0000..=0x1FFF => self.ram[(addr & 0x07FF) as usize],
+            0x2000..=0x3FFF => self.ppu_registers[(addr & 0x0007) as usize],
+            0x4000..=0x4017 => self.apu_io[(addr - 0x4000) as usize],
+            _ = 0 
         }
-
     }
 
     pub fn read(&self, addr: u16) -> u8 {
