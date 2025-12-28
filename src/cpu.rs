@@ -7,6 +7,7 @@ pub struct CPU {
     register_y: u8,
     stack_pointer: u8,
     status: u8,
+    bus: Bus, 
 }
 
 pub struct Instruction {
@@ -131,24 +132,31 @@ pub enum Opcode {
     Unknown,
 }
 
+trait Mem {
+    fn mem_read(&self, addr: u16) -> u8; 
+    fn mem_write(&self, addr: u16, data:u8); 
+}
+
+impl Mem for CPU { 
+    fn mem_read(&self, addr: u16) -> u8 { 
+        self.bus.mem_read(addr); 
+    }
+
+    fn mem_write(&self, addr: u16, data: u8){ 
+        self.bus.mem_write(addr, data); 
+    }
+}
 impl CPU {
     pub fn new() -> Self {
-        CPU {
+        Self {
             accumulator: 0,
             program_counter: 0x8000,
             register_x: 0,
             register_y: 0,
             stack_pointer: 0xFD,
             status: 0x24,
+            bus: Bus::new(), 
         }
-    }
-
-    pub fn read(&self, bus: &Bus, addr: u16) -> u8 {
-        bus.read(addr)
-    }
-
-    pub fn write(&self, bus: &mut Bus, addr: u16, data: u8) {
-        bus.write(addr, data);
     }
 
     pub fn fetch(&mut self, bus: &Bus) -> u8 {
@@ -248,6 +256,17 @@ impl CPU {
                 self.accumulator = value; 
                 self.set_flag(Flags::Z, self.accumulator == 0)
                 self.set_flag(Flags::N, self.accumulator & 0x80 != 0)
+            }
+            
+            Opcode::LDX => { 
+                let value = match instruction.addressing_mode { 
+                    AddressingMode::Immediate => self.fetch(bus),
+                    
+                }
+            }
+        
+            Opcode::STA => {
+                
             }
         
         }
