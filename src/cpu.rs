@@ -7,7 +7,7 @@ pub struct CPU {
     register_y: u8,
     stack_pointer: u8,
     status: u8,
-    bus: Bus, 
+    bus: Bus,
 }
 
 pub struct Instruction {
@@ -132,20 +132,21 @@ pub enum Opcode {
     Unknown,
 }
 
-trait Mem {
-    fn mem_read(&self, addr: u16) -> u8; 
-    fn mem_write(&self, addr: u16, data:u8); 
+pub trait Mem {
+    fn mem_read(&self, addr: u16) -> u8;
+    fn mem_write(&mut self, addr: u16, data: u8);
 }
 
-impl Mem for CPU { 
-    fn mem_read(&self, addr: u16) -> u8 { 
-        self.bus.mem_read(addr); 
+impl Mem for CPU {
+    fn mem_read(&self, addr: u16) -> u8 {
+        self.bus.mem_read(addr)
     }
 
-    fn mem_write(&self, addr: u16, data: u8){ 
-        self.bus.mem_write(addr, data); 
+    fn mem_write(&mut self, addr: u16, data: u8) {
+        self.bus.mem_write(addr, data)
     }
 }
+
 impl CPU {
     pub fn new() -> Self {
         Self {
@@ -155,130 +156,330 @@ impl CPU {
             register_y: 0,
             stack_pointer: 0xFD,
             status: 0x24,
-            bus: Bus::new(), 
+            bus: Bus::new(),
         }
     }
 
-    pub fn fetch(&mut self, bus: &Bus) -> u8 {
-        let data = self.read(bus, self.program_counter);
-        self.program_counter += 1;
-        data
+    pub fn step(&mut self) {
+        let opcode = self.fetch();
+        let instruction = self.decode(opcode);
+        self.execute(instruction);
     }
 
-    pub fn clock(&mut self, bus: &mut Bus) {
-        let opcode = self.fetch(bus);
-        let instruction = self.decode(opcode);
-        // TODO: Execute instruction
+    pub fn fetch(&mut self) -> u8 {
+        let opcode = self.mem_read(self.program_counter);
+        self.program_counter += 1;
+        opcode
     }
 
     fn decode(&self, opcode: u8) -> Instruction {
         match opcode {
-            0x00 => Instruction { opcode: Opcode::BRK, addressing_mode: AddressingMode::Implied, cycles: 7 },
-            0x01 => Instruction { opcode: Opcode::ORA, addressing_mode: AddressingMode::IndexedIndirect, cycles: 6 },
-            0x05 => Instruction { opcode: Opcode::ORA, addressing_mode: AddressingMode::ZeroPage, cycles: 3 },
-            0x06 => Instruction { opcode: Opcode::ASL, addressing_mode: AddressingMode::ZeroPage, cycles: 5 },
-            0x08 => Instruction { opcode: Opcode::PHP, addressing_mode: AddressingMode::Implied, cycles: 3 },
-            0x09 => Instruction { opcode: Opcode::ORA, addressing_mode: AddressingMode::Immediate, cycles: 2 },
-            0x0A => Instruction { opcode: Opcode::ASL, addressing_mode: AddressingMode::Accumulator, cycles: 2 },
-            0x0D => Instruction { opcode: Opcode::ORA, addressing_mode: AddressingMode::Absolute, cycles: 4 },
-            0x0E => Instruction { opcode: Opcode::ASL, addressing_mode: AddressingMode::Absolute, cycles: 6 },
-            0x10 => Instruction { opcode: Opcode::BPL, addressing_mode: AddressingMode::Relative, cycles: 2 },
-            0x18 => Instruction { opcode: Opcode::CLC, addressing_mode: AddressingMode::Implied, cycles: 2 },
-            0x20 => Instruction { opcode: Opcode::JSR, addressing_mode: AddressingMode::Absolute, cycles: 6 },
-            0x29 => Instruction { opcode: Opcode::AND, addressing_mode: AddressingMode::Immediate, cycles: 2 },
-            0x2A => Instruction { opcode: Opcode::ROL, addressing_mode: AddressingMode::Accumulator, cycles: 2 },
-            0x38 => Instruction { opcode: Opcode::SEC, addressing_mode: AddressingMode::Implied, cycles: 2 },
-            0x40 => Instruction { opcode: Opcode::RTI, addressing_mode: AddressingMode::Implied, cycles: 6 },
-            0x48 => Instruction { opcode: Opcode::PHA, addressing_mode: AddressingMode::Implied, cycles: 3 },
-            0x49 => Instruction { opcode: Opcode::EOR, addressing_mode: AddressingMode::Immediate, cycles: 2 },
-            0x4A => Instruction { opcode: Opcode::LSR, addressing_mode: AddressingMode::Accumulator, cycles: 2 },
-            0x4C => Instruction { opcode: Opcode::JMP, addressing_mode: AddressingMode::Absolute, cycles: 3 },
-            0x58 => Instruction { opcode: Opcode::CLI, addressing_mode: AddressingMode::Implied, cycles: 2 },
-            0x60 => Instruction { opcode: Opcode::RTS, addressing_mode: AddressingMode::Implied, cycles: 6 },
-            0x68 => Instruction { opcode: Opcode::PLA, addressing_mode: AddressingMode::Implied, cycles: 4 },
-            0x69 => Instruction { opcode: Opcode::ADC, addressing_mode: AddressingMode::Immediate, cycles: 2 },
-            0x6A => Instruction { opcode: Opcode::ROR, addressing_mode: AddressingMode::Accumulator, cycles: 2 },
-            0x6C => Instruction { opcode: Opcode::JMP, addressing_mode: AddressingMode::Indirect, cycles: 5 },
-            0x78 => Instruction { opcode: Opcode::SEI, addressing_mode: AddressingMode::Implied, cycles: 2 },
-            0x84 => Instruction { opcode: Opcode::STY, addressing_mode: AddressingMode::ZeroPage, cycles: 3 },
-            0x85 => Instruction { opcode: Opcode::STA, addressing_mode: AddressingMode::ZeroPage, cycles: 3 },
-            0x86 => Instruction { opcode: Opcode::STX, addressing_mode: AddressingMode::ZeroPage, cycles: 3 },
-            0x88 => Instruction { opcode: Opcode::DEY, addressing_mode: AddressingMode::Implied, cycles: 2 },
-            0x8A => Instruction { opcode: Opcode::TXA, addressing_mode: AddressingMode::Implied, cycles: 2 },
-            0x8D => Instruction { opcode: Opcode::STA, addressing_mode: AddressingMode::Absolute, cycles: 4 },
-            0x90 => Instruction { opcode: Opcode::BCC, addressing_mode: AddressingMode::Relative, cycles: 2 },
-            0x98 => Instruction { opcode: Opcode::TYA, addressing_mode: AddressingMode::Implied, cycles: 2 },
-            0x9A => Instruction { opcode: Opcode::TXS, addressing_mode: AddressingMode::Implied, cycles: 2 },
-            0xA0 => Instruction { opcode: Opcode::LDY, addressing_mode: AddressingMode::Immediate, cycles: 2 },
-            0xA2 => Instruction { opcode: Opcode::LDX, addressing_mode: AddressingMode::Immediate, cycles: 2 },
-            0xA5 => Instruction { opcode: Opcode::LDA, addressing_mode: AddressingMode::ZeroPage, cycles: 3 },
-            0xA8 => Instruction { opcode: Opcode::TAY, addressing_mode: AddressingMode::Implied, cycles: 2 },
-            0xA9 => Instruction { opcode: Opcode::LDA, addressing_mode: AddressingMode::Immediate, cycles: 2 },
-            0xAA => Instruction { opcode: Opcode::TAX, addressing_mode: AddressingMode::Implied, cycles: 2 },
-            0xAD => Instruction { opcode: Opcode::LDA, addressing_mode: AddressingMode::Absolute, cycles: 4 },
-            0xB0 => Instruction { opcode: Opcode::BCS, addressing_mode: AddressingMode::Relative, cycles: 2 },
-            0xB8 => Instruction { opcode: Opcode::CLV, addressing_mode: AddressingMode::Implied, cycles: 2 },
-            0xBA => Instruction { opcode: Opcode::TSX, addressing_mode: AddressingMode::Implied, cycles: 2 },
-            0xC0 => Instruction { opcode: Opcode::CPY, addressing_mode: AddressingMode::Immediate, cycles: 2 },
-            0xC8 => Instruction { opcode: Opcode::INY, addressing_mode: AddressingMode::Implied, cycles: 2 },
-            0xC9 => Instruction { opcode: Opcode::CMP, addressing_mode: AddressingMode::Immediate, cycles: 2 },
-            0xCA => Instruction { opcode: Opcode::DEX, addressing_mode: AddressingMode::Implied, cycles: 2 },
-            0xD0 => Instruction { opcode: Opcode::BNE, addressing_mode: AddressingMode::Relative, cycles: 2 },
-            0xD8 => Instruction { opcode: Opcode::CLD, addressing_mode: AddressingMode::Implied, cycles: 2 },
-            0xE0 => Instruction { opcode: Opcode::CPX, addressing_mode: AddressingMode::Immediate, cycles: 2 },
-            0xE8 => Instruction { opcode: Opcode::INX, addressing_mode: AddressingMode::Implied, cycles: 2 },
-            0xE9 => Instruction { opcode: Opcode::SBC, addressing_mode: AddressingMode::Immediate, cycles: 2 },
-            0xEA => Instruction { opcode: Opcode::NOP, addressing_mode: AddressingMode::Implied, cycles: 2 },
-            0xF0 => Instruction { opcode: Opcode::BEQ, addressing_mode: AddressingMode::Relative, cycles: 2 },
-            0xF8 => Instruction { opcode: Opcode::SED, addressing_mode: AddressingMode::Implied, cycles: 2 },
-            _ => Instruction { opcode: Opcode::Unknown, addressing_mode: AddressingMode::Implied, cycles: 2 },
+            0x00 => Instruction {
+                opcode: Opcode::BRK,
+                addressing_mode: AddressingMode::Implied,
+                cycles: 7,
+            },
+            0x01 => Instruction {
+                opcode: Opcode::ORA,
+                addressing_mode: AddressingMode::IndexedIndirect,
+                cycles: 6,
+            },
+            0x05 => Instruction {
+                opcode: Opcode::ORA,
+                addressing_mode: AddressingMode::ZeroPage,
+                cycles: 3,
+            },
+            0x06 => Instruction {
+                opcode: Opcode::ASL,
+                addressing_mode: AddressingMode::ZeroPage,
+                cycles: 5,
+            },
+            0x08 => Instruction {
+                opcode: Opcode::PHP,
+                addressing_mode: AddressingMode::Implied,
+                cycles: 3,
+            },
+            0x09 => Instruction {
+                opcode: Opcode::ORA,
+                addressing_mode: AddressingMode::Immediate,
+                cycles: 2,
+            },
+            0x0A => Instruction {
+                opcode: Opcode::ASL,
+                addressing_mode: AddressingMode::Accumulator,
+                cycles: 2,
+            },
+            0x0D => Instruction {
+                opcode: Opcode::ORA,
+                addressing_mode: AddressingMode::Absolute,
+                cycles: 4,
+            },
+            0x0E => Instruction {
+                opcode: Opcode::ASL,
+                addressing_mode: AddressingMode::Absolute,
+                cycles: 6,
+            },
+            0x10 => Instruction {
+                opcode: Opcode::BPL,
+                addressing_mode: AddressingMode::Relative,
+                cycles: 2,
+            },
+            0x18 => Instruction {
+                opcode: Opcode::CLC,
+                addressing_mode: AddressingMode::Implied,
+                cycles: 2,
+            },
+            0x20 => Instruction {
+                opcode: Opcode::JSR,
+                addressing_mode: AddressingMode::Absolute,
+                cycles: 6,
+            },
+            0x29 => Instruction {
+                opcode: Opcode::AND,
+                addressing_mode: AddressingMode::Immediate,
+                cycles: 2,
+            },
+            0x2A => Instruction {
+                opcode: Opcode::ROL,
+                addressing_mode: AddressingMode::Accumulator,
+                cycles: 2,
+            },
+            0x38 => Instruction {
+                opcode: Opcode::SEC,
+                addressing_mode: AddressingMode::Implied,
+                cycles: 2,
+            },
+            0x40 => Instruction {
+                opcode: Opcode::RTI,
+                addressing_mode: AddressingMode::Implied,
+                cycles: 6,
+            },
+            0x48 => Instruction {
+                opcode: Opcode::PHA,
+                addressing_mode: AddressingMode::Implied,
+                cycles: 3,
+            },
+            0x49 => Instruction {
+                opcode: Opcode::EOR,
+                addressing_mode: AddressingMode::Immediate,
+                cycles: 2,
+            },
+            0x4A => Instruction {
+                opcode: Opcode::LSR,
+                addressing_mode: AddressingMode::Accumulator,
+                cycles: 2,
+            },
+            0x4C => Instruction {
+                opcode: Opcode::JMP,
+                addressing_mode: AddressingMode::Absolute,
+                cycles: 3,
+            },
+            0x58 => Instruction {
+                opcode: Opcode::CLI,
+                addressing_mode: AddressingMode::Implied,
+                cycles: 2,
+            },
+            0x60 => Instruction {
+                opcode: Opcode::RTS,
+                addressing_mode: AddressingMode::Implied,
+                cycles: 6,
+            },
+            0x68 => Instruction {
+                opcode: Opcode::PLA,
+                addressing_mode: AddressingMode::Implied,
+                cycles: 4,
+            },
+            0x69 => Instruction {
+                opcode: Opcode::ADC,
+                addressing_mode: AddressingMode::Immediate,
+                cycles: 2,
+            },
+            0x6A => Instruction {
+                opcode: Opcode::ROR,
+                addressing_mode: AddressingMode::Accumulator,
+                cycles: 2,
+            },
+            0x6C => Instruction {
+                opcode: Opcode::JMP,
+                addressing_mode: AddressingMode::Indirect,
+                cycles: 5,
+            },
+            0x78 => Instruction {
+                opcode: Opcode::SEI,
+                addressing_mode: AddressingMode::Implied,
+                cycles: 2,
+            },
+            0x84 => Instruction {
+                opcode: Opcode::STY,
+                addressing_mode: AddressingMode::ZeroPage,
+                cycles: 3,
+            },
+            0x85 => Instruction {
+                opcode: Opcode::STA,
+                addressing_mode: AddressingMode::ZeroPage,
+                cycles: 3,
+            },
+            0x86 => Instruction {
+                opcode: Opcode::STX,
+                addressing_mode: AddressingMode::ZeroPage,
+                cycles: 3,
+            },
+            0x88 => Instruction {
+                opcode: Opcode::DEY,
+                addressing_mode: AddressingMode::Implied,
+                cycles: 2,
+            },
+            0x8A => Instruction {
+                opcode: Opcode::TXA,
+                addressing_mode: AddressingMode::Implied,
+                cycles: 2,
+            },
+            0x8D => Instruction {
+                opcode: Opcode::STA,
+                addressing_mode: AddressingMode::Absolute,
+                cycles: 4,
+            },
+            0x90 => Instruction {
+                opcode: Opcode::BCC,
+                addressing_mode: AddressingMode::Relative,
+                cycles: 2,
+            },
+            0x98 => Instruction {
+                opcode: Opcode::TYA,
+                addressing_mode: AddressingMode::Implied,
+                cycles: 2,
+            },
+            0x9A => Instruction {
+                opcode: Opcode::TXS,
+                addressing_mode: AddressingMode::Implied,
+                cycles: 2,
+            },
+            0xA0 => Instruction {
+                opcode: Opcode::LDY,
+                addressing_mode: AddressingMode::Immediate,
+                cycles: 2,
+            },
+            0xA2 => Instruction {
+                opcode: Opcode::LDX,
+                addressing_mode: AddressingMode::Immediate,
+                cycles: 2,
+            },
+            0xA5 => Instruction {
+                opcode: Opcode::LDA,
+                addressing_mode: AddressingMode::ZeroPage,
+                cycles: 3,
+            },
+            0xA8 => Instruction {
+                opcode: Opcode::TAY,
+                addressing_mode: AddressingMode::Implied,
+                cycles: 2,
+            },
+            0xA9 => Instruction {
+                opcode: Opcode::LDA,
+                addressing_mode: AddressingMode::Immediate,
+                cycles: 2,
+            },
+            0xAA => Instruction {
+                opcode: Opcode::TAX,
+                addressing_mode: AddressingMode::Implied,
+                cycles: 2,
+            },
+            0xAD => Instruction {
+                opcode: Opcode::LDA,
+                addressing_mode: AddressingMode::Absolute,
+                cycles: 4,
+            },
+            0xB0 => Instruction {
+                opcode: Opcode::BCS,
+                addressing_mode: AddressingMode::Relative,
+                cycles: 2,
+            },
+            0xB8 => Instruction {
+                opcode: Opcode::CLV,
+                addressing_mode: AddressingMode::Implied,
+                cycles: 2,
+            },
+            0xBA => Instruction {
+                opcode: Opcode::TSX,
+                addressing_mode: AddressingMode::Implied,
+                cycles: 2,
+            },
+            0xC0 => Instruction {
+                opcode: Opcode::CPY,
+                addressing_mode: AddressingMode::Immediate,
+                cycles: 2,
+            },
+            0xC8 => Instruction {
+                opcode: Opcode::INY,
+                addressing_mode: AddressingMode::Implied,
+                cycles: 2,
+            },
+            0xC9 => Instruction {
+                opcode: Opcode::CMP,
+                addressing_mode: AddressingMode::Immediate,
+                cycles: 2,
+            },
+            0xCA => Instruction {
+                opcode: Opcode::DEX,
+                addressing_mode: AddressingMode::Implied,
+                cycles: 2,
+            },
+            0xD0 => Instruction {
+                opcode: Opcode::BNE,
+                addressing_mode: AddressingMode::Relative,
+                cycles: 2,
+            },
+            0xD8 => Instruction {
+                opcode: Opcode::CLD,
+                addressing_mode: AddressingMode::Implied,
+                cycles: 2,
+            },
+            0xE0 => Instruction {
+                opcode: Opcode::CPX,
+                addressing_mode: AddressingMode::Immediate,
+                cycles: 2,
+            },
+            0xE8 => Instruction {
+                opcode: Opcode::INX,
+                addressing_mode: AddressingMode::Implied,
+                cycles: 2,
+            },
+            0xE9 => Instruction {
+                opcode: Opcode::SBC,
+                addressing_mode: AddressingMode::Immediate,
+                cycles: 2,
+            },
+            0xEA => Instruction {
+                opcode: Opcode::NOP,
+                addressing_mode: AddressingMode::Implied,
+                cycles: 2,
+            },
+            0xF0 => Instruction {
+                opcode: Opcode::BEQ,
+                addressing_mode: AddressingMode::Relative,
+                cycles: 2,
+            },
+            0xF8 => Instruction {
+                opcode: Opcode::SED,
+                addressing_mode: AddressingMode::Implied,
+                cycles: 2,
+            },
+            _ => Instruction {
+                opcode: Opcode::Unknown,
+                addressing_mode: AddressingMode::Implied,
+                cycles: 2,
+            },
         }
     }
 
-    pub fn execute(&mut self, bus: &mut Bus, instruction: Instruction){
-        match instruction.opcode {
-            Opcode::LDA => {
-                let value = match instruction.addressing_mode { 
-                    AddressingMode::Immediate => self.fetch(bus),
-                    AddressingMode::ZeroPage => { 
-                        let addr = self.fetch(bus) as u16;
-                        self.read(bus, addr)
-                    }
+    pub fn execute(&mut self, instruction: Instruction) {}
 
-                    AddressingMode::Absolute => { 
-                        let low = self.fetch(bus) as u16; 
-                        let high = self.fetch(bus) as u16; 
-                        let addr = (high << 8) | low; 
-                        self.read(bus, addr)
-                    }
-                    - => 0,
-                };
-                self.accumulator = value; 
-                self.set_flag(Flags::Z, self.accumulator == 0)
-                self.set_flag(Flags::N, self.accumulator & 0x80 != 0)
-            }
-            
-            Opcode::LDX => { 
-                let value = match instruction.addressing_mode { 
-                    AddressingMode::Immediate => self.fetch(bus),
-                    
-                }
-            }
-        
-            Opcode::STA => {
-                
-            }
-        
-        }
-    }
-
-    pub fn set_flag(&mut self, flag: Flags, condition: bool){
+    pub fn set_flag(&mut self, flag: Flags, condition: bool) {
         if condition {
             self.status |= flag as u8;
-        } else { 
+        } else {
             self.status &= !(flag as u8);
         }
-        
     }
 
     pub fn reset(&mut self) {
@@ -290,11 +491,7 @@ impl CPU {
         self.program_counter = 0x8000;
     }
 
-    pub fn irq(&mut self) {
-        
-    }
+    pub fn irq(&mut self) {}
 
-    pub fn nmi(&mut self) {
-        
-    }
+    pub fn nmi(&mut self) {}
 }

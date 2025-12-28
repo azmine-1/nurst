@@ -1,3 +1,4 @@
+use crate::cpu::Mem;
 const RAM: u16 = 0x0000;
 const RAM_MIRRORS_END: u16 = 0x1FFF;
 const PPU_REGISTERS: u16 = 0x2000;
@@ -22,12 +23,12 @@ impl Bus {
 }
 
 
-impl Mem for Bus{ 
+impl Mem for Bus { 
     fn mem_read(&self, addr: u16) -> u8{ 
         match addr {
             RAM ..= RAM_MIRRORS_END => { 
                 let mirror_down_addr = addr & 0b00000111_11111111; 
-                self.cpu_vram[mirror_down_addr as usize]
+                self.ram[mirror_down_addr as usize]
             }
 
             PPU_REGISTERS ..= PPU_REGISTERS_MIRRORS_END => { 
@@ -40,5 +41,24 @@ impl Mem for Bus{
                 0
             }
         }
+    }
+
+    fn mem_write(&self, addr: u16, data: u16) { 
+        match addr {
+            RAM ..= RAM_MIRRORS_END => {
+                let mirror_down_addr = addr & 0b11111111111; 
+                self.ram[mirror_down_addr as usize] = data; 
+            }
+            PPU_REGISTERS ..= PPU_REGISTERS_MIRRORS_END => { 
+                let _mirror_addr_down = addr & 0b00100000_00000111;
+                todo!("PPU is not yet supported"); 
+            }
+
+            _ => { 
+                println!("Ignoring mem write-access at {}", addr); 
+            }
+        }
+
+
     }
 }
