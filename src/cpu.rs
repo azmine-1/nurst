@@ -1,3 +1,5 @@
+use std::ops::Add;
+
 use crate::bus::Bus;
 
 pub struct CPU {
@@ -41,8 +43,8 @@ pub enum AddressingMode {
     AbsoluteX,
     AbsoluteY,
     Indirect,
-    IndexedIndirect, // (Indirect, X)
-    IndirectIndexed, // (Indirect, Y)
+    IndirectX, // (Indirect, X)
+    IndirectY, // (Indirect, Y)
 }
 
 #[repr(u8)]
@@ -135,6 +137,8 @@ pub enum Opcode {
 pub trait Mem {
     fn mem_read(&self, addr: u16) -> u8;
     fn mem_write(&mut self, addr: u16, data: u8);
+    fn mem_read_u16(&self, pos: u16) -> u16;
+    fn mem_write_u16(&mut self, pos: u16, data: u16);
 }
 
 impl Mem for CPU {
@@ -144,6 +148,14 @@ impl Mem for CPU {
 
     fn mem_write(&mut self, addr: u16, data: u8) {
         self.bus.mem_write(addr, data)
+    }
+
+    fn mem_read_u16(&self, pos: u16) -> u16 {
+        self.bus.mem_read_u16(pos)
+    }
+
+    fn mem_write_u16(&mut self, pos: u16, data: u16) {
+        self.bus.mem_write_u16(pos, data)
     }
 }
 
@@ -161,14 +173,20 @@ impl CPU {
     }
 
     pub fn step(&mut self) {
-        let opcode = self.fetch();
+        let opcode = self.fetch_byte();
         let instruction = self.decode(opcode);
         self.execute(instruction);
     }
 
-    pub fn fetch(&mut self) -> u8 {
-        let opcode = self.mem_read(self.program_counter);
+    pub fn fetch_byte(&mut self) -> u8 {
+        let opcode = self.mem_read(self.program_counter) as u8;
         self.program_counter += 1;
+        opcode
+    }
+
+    pub fn fetch_word(&mut self) -> u16 {
+        let opcode = self.mem_read_u16(self.program_counter);
+        self.program_counter += 2;
         opcode
     }
 
@@ -471,8 +489,62 @@ impl CPU {
             },
         }
     }
+    
+    pub fn adc(&mut self, val: u8) -> u8 { 
+        let carry = if self.get_flag(Flags::C) {1} else {0};
+        let result = self.accumulator + val + carry; 
+        self.set_zn(result);
+        self.set_carry(result);
+        self.set_overflow(val, self.accumulator, result);
+        result 
+    }
+    pub fn execute(&mut self, instruction: Instruction) {
+        let addr = self.resolve_addr(&instruction.addressing_mode);
+        match instruction.opcode {
+            Opcode::LDA => self.accumulator = self.mem_read(addr),
+            Opcode::LDX => self.register_x = self.mem_read(addr), 
+            Opcode::LDY => self.register_y = self.mem_read(addr),
+            Opcode::STA => self.mem_write(addr, self.accumulator),
+            Opcode::STX => self.mem_write(addr, self.register_x), 
+            Opcode::STY => self.mem_write(addr, self.register_y), 
+            Opcode::TAX => self.register_x = self.accumulator,
+            Opcode::TAY => self.register_y = self.accumulator,
+            Opcode::TSX => self.stack_pointer = self.register_x,
+            Opcode::TXS => self.register_x = self.stack_pointer, 
+            Opcode::TYA => self.register_y = self.accumulator, 
+            Opcode::ADC => self.accumulator = 
 
-    pub fn execute(&mut self, instruction: Instruction) {}
+        }
+    }
+
+    pub fn resolve_addr(&mut self, mode: &AddressingMode) -> u16 {
+        match mode {
+            AddressingMode::Relative => {
+                let offset = self.fetch_byte() as i8;
+                self.program_counter.wrapping_add(offset as u16)
+            }
+            AddressingMode::Implied => 0,
+            AddressingMode::Immediate => self.fetch_byte() as u16,
+            AddressingMode::ZeroPage => self.fetch_byte() as u16,
+            AddressingMode::ZeroPageX => self.fetch_byte().wrapping_add(self.register_x) as u16,
+            AddressingMode::ZeroPageY => self.fetch_byte().wrapping_add(self.register_y) as u16,
+            AddressingMode::Absolute => self.fetch_word(),
+            AddressingMode::Indirect => {
+                let ptr = self.fetch_word();
+                self.mem_read_u16(ptr)
+            }
+            AddressingMode::AbsoluteX => self.fetch_word().wrapping_add(self.register_x as u16),
+            AddressingMode::AbsoluteY => self.fetch_word().wrapping_add(self.register_y as u16),
+            AddressingMode::IndirectX => {
+                let ptr = self.fetch_word().wrapping_add(self.register_x as u16);
+                self.mem_read_u16(ptr)
+            }
+            AddressingMode::IndirectY => {
+                let ptr = self.fetch_word().wrapping_add(self.register_y as u16);
+                self.mem_read_u16(ptr as u16)
+            }
+        }
+    }
 
     pub fn set_flag(&mut self, flag: Flags, condition: bool) {
         if condition {
@@ -481,6 +553,25 @@ impl CPU {
             self.status &= !(flag as u8);
         }
     }
+
+    pub fn get_flag(&self, flag:Flags) -> bool {
+        (self.status &(flag as u8)) != 0
+    }
+
+    pub fn set_zn(&mut self, value: u8){
+        self.set_flag(Flags::Z, value == 0);
+        self.set_flag(Flags::N, (value & 0x80) != 0); 
+    }
+
+    pub fn set_carry(&mut self, value: u8){
+        self.set_flag(Flags::C, value > 0xFF);
+    }
+
+    pub fn set_overflow(&mut self, a: u8, b: u8, result: u8){
+        let overflow = (a ^ result) & (b ^ result) & 0x80 != 0;
+        self.set_flag(Flags::V, overflow); 
+    }
+
 
     pub fn reset(&mut self) {
         self.accumulator = 0;

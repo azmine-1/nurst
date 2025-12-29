@@ -43,7 +43,7 @@ impl Mem for Bus {
         }
     }
 
-    fn mem_write(&self, addr: u16, data: u16) { 
+    fn mem_write(&mut self, addr: u16, data: u8) { 
         match addr {
             RAM ..= RAM_MIRRORS_END => {
                 let mirror_down_addr = addr & 0b11111111111; 
