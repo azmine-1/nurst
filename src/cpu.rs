@@ -1,5 +1,3 @@
-use std::ops::Add;
-
 use crate::bus::Bus;
 
 pub struct CPU {
@@ -10,6 +8,8 @@ pub struct CPU {
     stack_pointer: u8,
     status: u8,
     bus: Bus,
+    irq: bool,
+    nmi: bool,
 }
 
 pub struct Instruction {
@@ -199,7 +199,7 @@ impl CPU {
             },
             0x01 => Instruction {
                 opcode: Opcode::ORA,
-                addressing_mode: AddressingMode::IndexedIndirect,
+                addressing_mode: AddressingMode::IndirectX,
                 cycles: 6,
             },
             0x05 => Instruction {
@@ -489,31 +489,42 @@ impl CPU {
             },
         }
     }
-    
-    pub fn adc(&mut self, val: u8) -> u8 { 
-        let carry = if self.get_flag(Flags::C) {1} else {0};
-        let result = self.accumulator + val + carry; 
+
+    pub fn adc(&mut self, val: u8, acc: u8) -> u8 {
+        let carry = if self.get_flag(Flags::C) { 1 } else { 0 };
+        self.set_overflow(val, acc, val + acc);
+        let sum = acc as u16 + val as u16 + carry as u16;
+        self.set_carry(sum);
+        let result = sum as u8;
         self.set_zn(result);
-        self.set_carry(result);
-        self.set_overflow(val, self.accumulator, result);
-        result 
+        result
+    }
+
+    pub fn sbc(&mut self, acc: u8, mem: u8) -> u8 {
+        let carry = if self.get_flag(Flags::C) { 1 } else { 0 };
+        let sub = acc as i16 - !mem as i16 - carry as i16;
+        let overflow: i16 = (sub ^ acc as i16) & (sub ^ !mem as i16) & 0x80;
+        self.set_flag(Flags::V, overflow != 0);
+        self.set_flag(Flags::C, sub < 0);
+        sub as u8
     }
     pub fn execute(&mut self, instruction: Instruction) {
         let addr = self.resolve_addr(&instruction.addressing_mode);
         match instruction.opcode {
             Opcode::LDA => self.accumulator = self.mem_read(addr),
-            Opcode::LDX => self.register_x = self.mem_read(addr), 
+            Opcode::LDX => self.register_x = self.mem_read(addr),
             Opcode::LDY => self.register_y = self.mem_read(addr),
             Opcode::STA => self.mem_write(addr, self.accumulator),
-            Opcode::STX => self.mem_write(addr, self.register_x), 
-            Opcode::STY => self.mem_write(addr, self.register_y), 
+            Opcode::STX => self.mem_write(addr, self.register_x),
+            Opcode::STY => self.mem_write(addr, self.register_y),
             Opcode::TAX => self.register_x = self.accumulator,
             Opcode::TAY => self.register_y = self.accumulator,
             Opcode::TSX => self.stack_pointer = self.register_x,
-            Opcode::TXS => self.register_x = self.stack_pointer, 
-            Opcode::TYA => self.register_y = self.accumulator, 
-            Opcode::ADC => self.accumulator = 
-
+            Opcode::TXS => self.register_x = self.stack_pointer,
+            Opcode::TYA => self.register_y = self.accumulator,
+            Opcode::ADC => self.accumulator = self.adc(self.mem_read(addr), self.accumulator),
+            Opcode::SBC => self.accumulator = self.sbc(self.accumulator, self.mem_read(addr)),
+            _ => println!("Opcode not yet supported"),
         }
     }
 
@@ -543,6 +554,10 @@ impl CPU {
                 let ptr = self.fetch_word().wrapping_add(self.register_y as u16);
                 self.mem_read_u16(ptr as u16)
             }
+            _ => {
+                println!("Addressmode not yet supported");
+                0
+            }
         }
     }
 
@@ -554,24 +569,23 @@ impl CPU {
         }
     }
 
-    pub fn get_flag(&self, flag:Flags) -> bool {
-        (self.status &(flag as u8)) != 0
+    pub fn get_flag(&self, flag: Flags) -> bool {
+        (self.status & (flag as u8)) != 0
     }
 
-    pub fn set_zn(&mut self, value: u8){
+    pub fn set_zn(&mut self, value: u8) {
         self.set_flag(Flags::Z, value == 0);
-        self.set_flag(Flags::N, (value & 0x80) != 0); 
+        self.set_flag(Flags::N, (value & 0x80) != 0);
     }
 
-    pub fn set_carry(&mut self, value: u8){
+    pub fn set_carry(&mut self, value: u16) {
         self.set_flag(Flags::C, value > 0xFF);
     }
 
-    pub fn set_overflow(&mut self, a: u8, b: u8, result: u8){
+    pub fn set_overflow(&mut self, a: u8, b: u8, result: u8) {
         let overflow = (a ^ result) & (b ^ result) & 0x80 != 0;
-        self.set_flag(Flags::V, overflow); 
+        self.set_flag(Flags::V, overflow);
     }
-
 
     pub fn reset(&mut self) {
         self.accumulator = 0;
@@ -582,7 +596,17 @@ impl CPU {
         self.program_counter = 0x8000;
     }
 
-    pub fn irq(&mut self) {}
+    pub fn push(&mut self, val: u8) {
+        self.mem_write(0x0100 | self.stack_pointer as u16, val);
+        self.stack_pointer -= 1;
+    }
+    pub fn irq(&mut self) {
+        let high = (self.program_counter >> 8) as u8;
+        let low = (self.program_counter & 0xFF) as u8;
+        self.push(high);
+        self.push(low);
+        self.push(self.status);
+    }
 
     pub fn nmi(&mut self) {}
 }
