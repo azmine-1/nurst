@@ -8,8 +8,6 @@ pub struct CPU {
     stack_pointer: u8,
     status: u8,
     bus: Bus,
-    irq: bool,
-    nmi: bool,
 }
 
 pub struct Instruction {
@@ -600,13 +598,32 @@ impl CPU {
         self.mem_write(0x0100 | self.stack_pointer as u16, val);
         self.stack_pointer -= 1;
     }
+
+    pub fn load_irq_pc(&mut self) {
+        let high = self.mem_read(0xFFFF);
+        let low = self.mem_read(0xFFFE);
+        self.program_counter = (high as u16) << 8 | low as u16;
+    }
     pub fn irq(&mut self) {
+        if !self.get_flag(Flags::I) {
+            let high = (self.program_counter >> 8) as u8;
+            let low = (self.program_counter & 0xFF) as u8;
+            self.push(high);
+            self.push(low);
+            self.load_irq_pc();
+            self.push(self.status | 0x20);
+            self.set_flag(Flags::I, true);
+        } else {
+        }
+    }
+
+    pub fn nmi(&mut self) {
         let high = (self.program_counter >> 8) as u8;
         let low = (self.program_counter & 0xFF) as u8;
         self.push(high);
         self.push(low);
-        self.push(self.status);
+        self.load_irq_pc();
+        self.push(self.status | 0x20);
+        self.set_flag(Flags::I, true);
     }
-
-    pub fn nmi(&mut self) {}
 }
