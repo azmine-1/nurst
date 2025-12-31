@@ -517,11 +517,43 @@ impl CPU {
             Opcode::STY => self.mem_write(addr, self.register_y),
             Opcode::TAX => self.register_x = self.accumulator,
             Opcode::TAY => self.register_y = self.accumulator,
-            Opcode::TSX => self.stack_pointer = self.register_x,
-            Opcode::TXS => self.register_x = self.stack_pointer,
+            Opcode::TSX => self.register_x = self.stack_pointer,
+            Opcode::TXS => self.stack_pointer = self.register_x,
             Opcode::TYA => self.register_y = self.accumulator,
             Opcode::ADC => self.accumulator = self.adc(self.mem_read(addr), self.accumulator),
             Opcode::SBC => self.accumulator = self.sbc(self.accumulator, self.mem_read(addr)),
+            Opcode::INC => {
+                let value = self.mem_read(addr);
+                let res = value.wrapping_add(1);
+                self.mem_write(addr, res);
+                self.set_zn(res);
+            }
+            Opcode::INX => {
+                let res = self.register_x.wrapping_add(1);
+                self.register_x = res;
+                self.set_zn(res);
+            }
+            Opcode::INY => {
+                let res = self.register_y.wrapping_add(1);
+                self.register_y = res;
+                self.set_zn(res);
+            }
+            Opcode::DEC => {
+                let value = self.mem_read(addr);
+                let res = value.wrapping_sub(1);
+                self.mem_write(addr, res);
+                self.set_zn(res);
+            }
+            Opcode::DEX => {
+                let res = self.register_x.wrapping_sub(1);
+                self.register_x = res;
+                self.set_zn(res);
+            }
+            Opcode::DEY => {
+                let res = self.register_y.wrapping_sub(1);
+                self.register_y = res;
+                self.set_zn(res);
+            }
             _ => println!("Opcode not yet supported"),
         }
     }
