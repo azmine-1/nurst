@@ -554,6 +554,33 @@ impl CPU {
                 self.register_y = res;
                 self.set_zn(res);
             }
+            Opcode::ASL => {
+                if instruction.addressing_mode == AddressingMode::Accumulator {
+                    self.set_flag(Flags::C, (self.accumulator & 0x80) != 0);
+                    self.accumulator = self.accumulator << 1;
+                    self.set_zn(self.accumulator);
+                } else {
+                    let val = self.mem_read(addr);
+                    self.set_flag(Flags::C, (val & 0x80) != 0);
+                    let result = val << 1;
+                    self.mem_write(addr, result);
+                    self.set_zn(result);
+                }
+            }
+            Opcode::LSR => {
+                if instruction.addressing_mode == AddressingMode::Accumulator {
+                    self.set_flag(Flags::C, (self.accumulator & 0x80) != 0);
+                    self.accumulator = self.accumulator >> 1;
+                    self.set_zn(self.accumulator);
+                } else {
+                    let val = self.mem_read(addr);
+                    let result = (val >> 1) & (1 << 7);
+                    let bit0 = (result & 1) != 0;
+                    self.set_flag(Flags::C, bit0);
+                    self.mem_write(addr, result);
+                    self.set_zn(result);
+                }
+            }
             _ => println!("Opcode not yet supported"),
         }
     }
