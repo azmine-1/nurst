@@ -501,27 +501,54 @@ impl CPU {
     }
 
     pub fn sbc(&mut self, acc: u8, mem: u8) -> u8 {
-        let carry = if self.get_flag(Flags::C) { 1 } else { 0 };
-        let sub = acc as i16 - !mem as i16 - carry as i16;
-        let overflow: i16 = (sub ^ acc as i16) & (sub ^ !mem as i16) & 0x80;
+        let carry = if self.get_flag(Flags::C) { 0 } else { 1 };
+        let sub = acc as i16 - mem as i16 - carry as i16;
+        let overflow: i16 = (sub ^ acc as i16) & (sub ^ (mem as i16)) & 0x80;
         self.set_flag(Flags::V, overflow != 0);
-        self.set_flag(Flags::C, sub < 0);
-        sub as u8
+        self.set_flag(Flags::C, sub >= 0);
+        let result = sub as u8;
+        self.set_zn(result);
+        result
     }
     pub fn execute(&mut self, instruction: Instruction) {
         let addr = self.resolve_addr(&instruction.addressing_mode);
         match instruction.opcode {
-            Opcode::LDA => self.accumulator = self.mem_read(addr),
-            Opcode::LDX => self.register_x = self.mem_read(addr),
-            Opcode::LDY => self.register_y = self.mem_read(addr),
+            Opcode::LDA => {
+                self.accumulator = self.mem_read(addr);
+                self.set_zn(self.accumulator);
+            }
+            Opcode::LDX => {
+                self.register_x = self.mem_read(addr);
+                self.set_zn(self.register_x);
+            }
+            Opcode::LDY => {
+                self.register_y = self.mem_read(addr);
+                self.set_zn(self.register_y);
+            }
             Opcode::STA => self.mem_write(addr, self.accumulator),
             Opcode::STX => self.mem_write(addr, self.register_x),
             Opcode::STY => self.mem_write(addr, self.register_y),
-            Opcode::TAX => self.register_x = self.accumulator,
-            Opcode::TAY => self.register_y = self.accumulator,
-            Opcode::TSX => self.register_x = self.stack_pointer,
+            Opcode::TAX => {
+                self.register_x = self.accumulator;
+                self.set_zn(self.register_x);
+            }
+            Opcode::TAY => {
+                self.register_y = self.accumulator;
+                self.set_zn(self.register_y);
+            }
+            Opcode::TSX => {
+                self.register_x = self.stack_pointer;
+                self.set_zn(self.register_x);
+            }
             Opcode::TXS => self.stack_pointer = self.register_x,
-            Opcode::TYA => self.register_y = self.accumulator,
+            Opcode::TXA => {
+                self.accumulator = self.register_x;
+                self.set_zn(self.accumulator);
+            }
+            Opcode::TYA => {
+                self.accumulator = self.register_y;
+                self.set_zn(self.accumulator);
+            }
             Opcode::ADC => self.accumulator = self.adc(self.mem_read(addr), self.accumulator),
             Opcode::SBC => self.accumulator = self.sbc(self.accumulator, self.mem_read(addr)),
             Opcode::INC => {
@@ -601,13 +628,13 @@ impl CPU {
                 if instruction.addressing_mode == AddressingMode::Accumulator {
                     let carry_flag = if self.get_flag(Flags::C) { 1 } else { 0 };
                     self.set_flag(Flags::C, (self.accumulator & 0x01) != 0);
-                    self.accumulator = self.accumulator >> 1 | carry_flag;
+                    self.accumulator = self.accumulator >> 1 | (carry_flag << 7);
                     self.set_zn(self.accumulator);
                 } else {
                     let carry_flag = if self.get_flag(Flags::C) { 1 } else { 0 };
                     let value = self.mem_read(addr);
                     self.set_flag(Flags::C, (value & 0x01) != 0);
-                    let result = value << 1 | carry_flag;
+                    let result = value >> 1 | (carry_flag << 7);
                     self.mem_write(addr, result);
                     self.set_zn(result);
                 }
@@ -629,9 +656,9 @@ impl CPU {
             }
             Opcode::BIT => {
                 let val = self.mem_read(addr);
-                let overflow: bool = (val & 0x40) != 0;
-                self.set_flag(Flags::N, overflow);
-                self.set_zn(val);
+                self.set_flag(Flags::N, (val & 0x80) != 0);
+                self.set_flag(Flags::V, (val & 0x40) != 0);
+                self.set_flag(Flags::Z, (val & self.accumulator) == 0);
             }
             _ => println!("Opcode not yet supported"),
         }
@@ -644,7 +671,11 @@ impl CPU {
                 self.program_counter.wrapping_add(offset as u16)
             }
             AddressingMode::Implied => 0,
-            AddressingMode::Immediate => self.fetch_byte() as u16,
+            AddressingMode::Immediate => {
+                let addr = self.program_counter;
+                self.program_counter += 1;
+                addr
+            }
             AddressingMode::ZeroPage => self.fetch_byte() as u16,
             AddressingMode::ZeroPageX => self.fetch_byte().wrapping_add(self.register_x) as u16,
             AddressingMode::ZeroPageY => self.fetch_byte().wrapping_add(self.register_y) as u16,
@@ -656,12 +687,14 @@ impl CPU {
             AddressingMode::AbsoluteX => self.fetch_word().wrapping_add(self.register_x as u16),
             AddressingMode::AbsoluteY => self.fetch_word().wrapping_add(self.register_y as u16),
             AddressingMode::IndirectX => {
-                let ptr = self.fetch_word().wrapping_add(self.register_x as u16);
-                self.mem_read_u16(ptr)
+                let base = self.fetch_byte();
+                let ptr = base.wrapping_add(self.register_x);
+                self.mem_read_u16(ptr as u16)
             }
             AddressingMode::IndirectY => {
-                let ptr = self.fetch_word().wrapping_add(self.register_y as u16);
-                self.mem_read_u16(ptr as u16)
+                let base = self.fetch_byte();
+                let ptr = self.mem_read_u16(base as u16);
+                ptr.wrapping_add(self.register_y as u16)
             }
             _ => {
                 println!("Addressmode not yet supported");
