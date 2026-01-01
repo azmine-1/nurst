@@ -706,7 +706,46 @@ impl CPU {
                     self.program_counter = addr;
                 }
             }
-
+            Opcode::BPL => {
+                if !self.get_flag(Flags::N) {
+                    self.program_counter = addr;
+                }
+            }
+            Opcode::BRK => {
+                self.irq();
+            }
+            Opcode::BVC => {
+                if !self.get_flag(Flags::V) {
+                    self.program_counter = addr;
+                }
+            }
+            Opcode::BVS => {
+                if self.get_flag(Flags::V) {
+                    self.program_counter = addr;
+                }
+            }
+            Opcode::CLC => {
+                self.set_flag(Flags::C, false);
+            }
+            Opcode::CLD => {
+                self.set_flag(Flags::D, false);
+            }
+            Opcode::CLI => {
+                self.set_flag(Flags::I, false);
+            }
+            Opcode::CLV => {
+                self.set_flag(Flags::V, false);
+            }
+            Opcode::JMP => {
+                self.program_counter = addr;
+            }
+            Opcode::JSR => {
+                let high = self.program_counter >> 8;
+                let low = self.program_counter;
+                self.push(high as u8);
+                self.push(low as u8);
+                self.program_counter = addr;
+            }
             _ => println!("Opcode not yet supported"),
         }
     }
