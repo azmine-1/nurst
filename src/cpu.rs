@@ -1,3 +1,5 @@
+use std::ops::Add;
+
 use crate::bus::Bus;
 
 pub struct CPU {
@@ -569,14 +571,28 @@ impl CPU {
             }
             Opcode::LSR => {
                 if instruction.addressing_mode == AddressingMode::Accumulator {
-                    self.set_flag(Flags::C, (self.accumulator & 0x80) != 0);
+                    self.set_flag(Flags::C, (self.accumulator & 0x01) != 0);
                     self.accumulator = self.accumulator >> 1;
                     self.set_zn(self.accumulator);
                 } else {
                     let val = self.mem_read(addr);
-                    let result = (val >> 1) & (1 << 7);
-                    let bit0 = (result & 1) != 0;
-                    self.set_flag(Flags::C, bit0);
+                    self.set_flag(Flags::C, (val & 0x01) != 0);
+                    let result = val >> 1;
+                    self.mem_write(addr, result);
+                    self.set_zn(result);
+                }
+            }
+            Opcode::ROL => {
+                if instruction.addressing_mode == AddressingMode::Accumulator {
+                    let shifted_bit = self.accumulator & 0x80;
+                    self.set_flag(Flags::C, (self.accumulator) & 0x80 != 0);
+                    self.accumulator = self.accumulator << 1 | shifted_bit;
+                    self.set_zn(self.accumulator);
+                } else {
+                    let value = self.mem_read(addr);
+                    let shifted_bit = value & 0x80;
+                    self.set_flag(Flags::C, (value & 0x80) != 0);
+                    let result = value << 1 | shifted_bit;
                     self.mem_write(addr, result);
                     self.set_zn(result);
                 }
