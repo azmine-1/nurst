@@ -584,18 +584,54 @@ impl CPU {
             }
             Opcode::ROL => {
                 if instruction.addressing_mode == AddressingMode::Accumulator {
-                    let shifted_bit = self.accumulator & 0x80;
-                    self.set_flag(Flags::C, (self.accumulator) & 0x80 != 0);
-                    self.accumulator = self.accumulator << 1 | shifted_bit;
+                    let carry_flag = if self.get_flag(Flags::C) { 1 } else { 0 };
+                    self.set_flag(Flags::C, (self.accumulator & 0x80) != 0);
+                    self.accumulator = self.accumulator << 1 | carry_flag;
                     self.set_zn(self.accumulator);
                 } else {
+                    let carry_flag = if self.get_flag(Flags::C) { 1 } else { 0 };
                     let value = self.mem_read(addr);
-                    let shifted_bit = value & 0x80;
                     self.set_flag(Flags::C, (value & 0x80) != 0);
-                    let result = value << 1 | shifted_bit;
+                    let result = value << 1 | carry_flag;
                     self.mem_write(addr, result);
                     self.set_zn(result);
                 }
+            }
+            Opcode::ROR => {
+                if instruction.addressing_mode == AddressingMode::Accumulator {
+                    let carry_flag = if self.get_flag(Flags::C) { 1 } else { 0 };
+                    self.set_flag(Flags::C, (self.accumulator & 0x01) != 0);
+                    self.accumulator = self.accumulator >> 1 | carry_flag;
+                    self.set_zn(self.accumulator);
+                } else {
+                    let carry_flag = if self.get_flag(Flags::C) { 1 } else { 0 };
+                    let value = self.mem_read(addr);
+                    self.set_flag(Flags::C, (value & 0x01) != 0);
+                    let result = value << 1 | carry_flag;
+                    self.mem_write(addr, result);
+                    self.set_zn(result);
+                }
+            }
+            Opcode::AND => {
+                let val = self.mem_read(addr);
+                self.accumulator = val & self.accumulator;
+                self.set_zn(self.accumulator);
+            }
+            Opcode::ORA => {
+                let val = self.mem_read(addr);
+                self.accumulator = val | self.accumulator;
+                self.set_zn(self.accumulator);
+            }
+            Opcode::EOR => {
+                let val = self.mem_read(addr);
+                self.accumulator = self.accumulator ^ val;
+                self.set_zn(self.accumulator);
+            }
+            Opcode::BIT => {
+                let val = self.mem_read(addr);
+                let overflow: bool = (val & 0x40) != 0;
+                self.set_flag(Flags::N, overflow);
+                self.set_zn(val);
             }
             _ => println!("Opcode not yet supported"),
         }
