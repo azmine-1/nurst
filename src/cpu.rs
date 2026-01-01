@@ -660,6 +660,20 @@ impl CPU {
                 self.set_flag(Flags::V, (val & 0x40) != 0);
                 self.set_flag(Flags::Z, (val & self.accumulator) == 0);
             }
+            Opcode::CMP => {
+                let val = self.mem_read(addr);
+                let result = self.accumulator - val;
+                self.set_flag(Flags::C, self.accumulator >= val);
+                self.set_flag(Flags::Z, self.accumulator == val);
+                self.set_flag(Flags::N, (result & 0x80) != 0);
+            }
+            Opcode::CPX => {
+                let val = self.mem_read(addr);
+                let result = self.register_x - val;
+                self.set_flag(Flags::C, self.register_x >= val);
+                self.set_flag(Flags::Z, self.register_x == val);
+                self.set_flag(Flags::N, (result & 0x80) != 0);
+            }
             _ => println!("Opcode not yet supported"),
         }
     }
