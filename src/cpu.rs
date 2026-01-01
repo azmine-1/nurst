@@ -674,6 +674,39 @@ impl CPU {
                 self.set_flag(Flags::Z, self.register_x == val);
                 self.set_flag(Flags::N, (result & 0x80) != 0);
             }
+            Opcode::CPY => {
+                let val = self.mem_read(addr);
+                let result = self.register_y - val;
+                self.set_flag(Flags::C, self.register_y >= val);
+                self.set_flag(Flags::Z, self.register_y == val);
+                self.set_flag(Flags::N, (result & 0x80) != 0);
+            }
+            Opcode::BCC => {
+                if !(self.get_flag(Flags::C)) {
+                    self.program_counter = addr;
+                }
+            }
+            Opcode::BCS => {
+                if self.get_flag(Flags::C) {
+                    self.program_counter = addr;
+                }
+            }
+            Opcode::BEQ => {
+                if self.get_flag(Flags::Z) {
+                    self.program_counter = addr;
+                }
+            }
+            Opcode::BMI => {
+                if self.get_flag(Flags::N) {
+                    self.program_counter = addr;
+                }
+            }
+            Opcode::BNE => {
+                if !self.get_flag(Flags::Z) {
+                    self.program_counter = addr;
+                }
+            }
+
             _ => println!("Opcode not yet supported"),
         }
     }
