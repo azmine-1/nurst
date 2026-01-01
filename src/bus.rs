@@ -20,6 +20,18 @@ impl Bus {
             cartridge_rom: [0; 32768],
         }
     }
+
+    pub fn load_rom(&mut self, rom: &[u8], start_addr: u16) {
+        let start = start_addr as usize;
+        for (i, &byte) in rom.iter().enumerate() {
+            if start_addr >= 0x8000 {
+                let rom_addr = (start + i) - 0x8000;
+                if rom_addr < self.cartridge_rom.len() {
+                    self.cartridge_rom[rom_addr] = byte;
+                }
+            }
+        }
+    }
 }
 
 impl Mem for Bus {
@@ -35,8 +47,13 @@ impl Mem for Bus {
                 todo!("PPU is not supported yet")
             }
 
+            0x8000..=0xFFFF => {
+                let rom_addr = (addr - 0x8000) as usize;
+                self.cartridge_rom[rom_addr]
+            }
+
             _ => {
-                println!("Ignoring mem access at {}", addr);
+                println!("Ignoring mem access at {:#06X}", addr);
                 0
             }
         }

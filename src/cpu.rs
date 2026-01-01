@@ -1,6 +1,6 @@
-use std::ops::Add;
-
 use crate::bus::Bus;
+use std::fmt;
+use std::ops::Add;
 
 pub struct CPU {
     accumulator: u8,
@@ -159,6 +159,33 @@ impl Mem for CPU {
     }
 }
 
+impl fmt::Display for CPU {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "CPU {{ A: ${:02X}, X: ${:02X}, Y: ${:02X}, SP: ${:02X}, PC: ${:04X}, Status: {:08b} }}",
+            self.accumulator,
+            self.register_x,
+            self.register_y,
+            self.stack_pointer,
+            self.program_counter,
+            self.status
+        )
+    }
+}
+
+impl fmt::Debug for CPU {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:04X}  A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}",
+            self.program_counter,
+            self.accumulator,
+            self.register_x,
+            self.register_y,
+            self.status,
+            self.stack_pointer
+        )
+    }
+}
 impl CPU {
     pub fn new() -> Self {
         Self {
@@ -492,10 +519,10 @@ impl CPU {
 
     pub fn adc(&mut self, val: u8, acc: u8) -> u8 {
         let carry = if self.get_flag(Flags::C) { 1 } else { 0 };
-        self.set_overflow(val, acc, val + acc);
         let sum = acc as u16 + val as u16 + carry as u16;
         self.set_carry(sum);
         let result = sum as u8;
+        self.set_overflow(val, acc, result);
         self.set_zn(result);
         result
     }
@@ -503,7 +530,7 @@ impl CPU {
     pub fn sbc(&mut self, acc: u8, mem: u8) -> u8 {
         let carry = if self.get_flag(Flags::C) { 0 } else { 1 };
         let sub = acc as i16 - mem as i16 - carry as i16;
-        let overflow: i16 = (sub ^ acc as i16) & (sub ^ (mem as i16)) & 0x80;
+        let overflow: i16 = (sub ^ acc as i16) & (sub ^ !(mem as i16)) & 0x80;
         self.set_flag(Flags::V, overflow != 0);
         self.set_flag(Flags::C, sub >= 0);
         let result = sub as u8;
@@ -662,21 +689,21 @@ impl CPU {
             }
             Opcode::CMP => {
                 let val = self.mem_read(addr);
-                let result = self.accumulator - val;
+                let result = self.accumulator.wrapping_sub(val);
                 self.set_flag(Flags::C, self.accumulator >= val);
                 self.set_flag(Flags::Z, self.accumulator == val);
                 self.set_flag(Flags::N, (result & 0x80) != 0);
             }
             Opcode::CPX => {
                 let val = self.mem_read(addr);
-                let result = self.register_x - val;
+                let result = self.register_x.wrapping_sub(val);
                 self.set_flag(Flags::C, self.register_x >= val);
                 self.set_flag(Flags::Z, self.register_x == val);
                 self.set_flag(Flags::N, (result & 0x80) != 0);
             }
             Opcode::CPY => {
                 let val = self.mem_read(addr);
-                let result = self.register_y - val;
+                let result = self.register_y.wrapping_sub(val);
                 self.set_flag(Flags::C, self.register_y >= val);
                 self.set_flag(Flags::Z, self.register_y == val);
                 self.set_flag(Flags::N, (result & 0x80) != 0);
@@ -712,7 +739,14 @@ impl CPU {
                 }
             }
             Opcode::BRK => {
-                self.irq();
+                self.program_counter += 1; // Skip padding byte
+                let high = (self.program_counter >> 8) as u8;
+                let low = (self.program_counter & 0xFF) as u8;
+                self.push(high);
+                self.push(low);
+                self.push(self.status | 0x30); // Push status with B and U flags set
+                self.set_flag(Flags::I, true);
+                self.load_irq_pc();
             }
             Opcode::BVC => {
                 if !self.get_flag(Flags::V) {
@@ -740,12 +774,48 @@ impl CPU {
                 self.program_counter = addr;
             }
             Opcode::JSR => {
-                let high = self.program_counter >> 8;
-                let low = self.program_counter;
-                self.push(high as u8);
-                self.push(low as u8);
+                let return_addr = self.program_counter - 1;
+                let high = (return_addr >> 8) as u8;
+                let low = (return_addr & 0xFF) as u8;
+                self.push(high);
+                self.push(low);
                 self.program_counter = addr;
             }
+            Opcode::SEC => {
+                self.set_flag(Flags::C, true);
+            }
+            Opcode::SED => {
+                self.set_flag(Flags::D, true);
+            }
+            Opcode::SEI => {
+                self.set_flag(Flags::I, true);
+            }
+            Opcode::PHA => {
+                self.push(self.accumulator);
+            }
+            Opcode::PHP => {
+                self.push(self.status | 0x30); // Push with B and U flags set
+            }
+            Opcode::PLA => {
+                self.accumulator = self.pop();
+                self.set_zn(self.accumulator);
+            }
+            Opcode::PLP => {
+                self.status = self.pop();
+            }
+            Opcode::RTS => {
+                let low = self.pop();
+                let high = self.pop();
+                self.program_counter = ((high as u16) << 8) | (low as u16);
+                self.program_counter += 1; // RTS increments the return address
+            }
+            Opcode::RTI => {
+                self.status = self.pop();
+                let low = self.pop();
+                let high = self.pop();
+                self.program_counter = ((high as u16) << 8) | (low as u16);
+            }
+            Opcode::NOP => {}
             _ => println!("Opcode not yet supported"),
         }
     }
@@ -821,12 +891,59 @@ impl CPU {
         self.register_y = 0;
         self.stack_pointer = 0xFD;
         self.status = 0x24;
-        self.program_counter = 0x8000;
+        // Read reset vector from 0xFFFC-0xFFFD
+        self.program_counter = self.mem_read_u16(0xFFFC);
+    }
+
+    pub fn load_and_run(&mut self, program: &[u8]) {
+        self.load(program);
+        self.reset();
+        self.run();
+    }
+
+    pub fn load(&mut self, program: &[u8]) {
+        // Load program into ROM at 0x8000
+        self.bus.load_rom(program, 0x8000);
+    }
+
+    pub fn run(&mut self) {
+        loop {
+            let opcode = self.mem_read(self.program_counter);
+
+            // Break on BRK instruction
+            if opcode == 0x00 {
+                break;
+            }
+
+            self.step();
+        }
+    }
+
+    pub fn run_with_callback<F>(&mut self, mut callback: F)
+    where
+        F: FnMut(&mut CPU),
+    {
+        loop {
+            let opcode = self.mem_read(self.program_counter);
+
+            // Break on BRK instruction
+            if opcode == 0x00 {
+                break;
+            }
+
+            callback(self);
+            self.step();
+        }
     }
 
     pub fn push(&mut self, val: u8) {
         self.mem_write(0x0100 | self.stack_pointer as u16, val);
         self.stack_pointer -= 1;
+    }
+
+    pub fn pop(&mut self) -> u8 {
+        self.stack_pointer += 1;
+        self.mem_read(0x0100 | self.stack_pointer as u16)
     }
 
     pub fn load_irq_pc(&mut self) {
