@@ -32,6 +32,12 @@ impl Bus {
             }
         }
     }
+
+    pub fn mem_read_u16_zp(&self, pos: u8) -> u16 {
+        let lo = self.mem_read(pos as u16);
+        let hi = self.mem_read(pos.wrapping_add(1) as u16);
+        (hi as u16) << 8 | (lo as u16)
+    }
 }
 
 impl Mem for Bus {
@@ -44,7 +50,7 @@ impl Mem for Bus {
 
             PPU_REGISTERS..=PPU_REGISTERS_MIRRORS_END => {
                 let _mirror_addr_down = addr & 0b00100000_000001111;
-                self.ram[_mirror_addr_down as usize]
+                0
             }
 
             0x8000..=0xFFFF => {
@@ -65,10 +71,7 @@ impl Mem for Bus {
                 let mirror_down_addr = addr & 0b00000111_11111111;
                 self.ram[mirror_down_addr as usize] = data;
             }
-            PPU_REGISTERS..=PPU_REGISTERS_MIRRORS_END => {
-                let _mirror_addr_down = addr & 0b00100000_00000111;
-                self.ram[_mirror_addr_down as usize] = data;
-            }
+            PPU_REGISTERS..=PPU_REGISTERS_MIRRORS_END => {}
 
             _ => {
                 println!("Ignoring mem write-access at {}", addr);
@@ -78,7 +81,7 @@ impl Mem for Bus {
 
     fn mem_read_u16(&self, pos: u16) -> u16 {
         let lo = self.mem_read(pos);
-        let hi = self.mem_read(pos + 1);
+        let hi = self.mem_read(pos.wrapping_add(1));
         (hi as u16) << 8 | (lo as u16)
     }
 
