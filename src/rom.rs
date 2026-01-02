@@ -1,6 +1,6 @@
 const NES_TAG: [u8; 4] = [0x4E, 0x45, 0x53, 0x1A]; // "NES" + MS-DOS EOF
 const PRG_ROM_PAGE_SIZE: usize = 16384; // 16 KB
-const CHR_ROM_PAGE_SIZE: usize = 8192;  // 8 KB
+const CHR_ROM_PAGE_SIZE: usize = 8192; // 8 KB
 
 #[derive(Debug, PartialEq)]
 pub enum Mirroring {
@@ -18,7 +18,6 @@ pub struct Rom {
 
 impl Rom {
     pub fn new(raw: &[u8]) -> Result<Rom, String> {
-        // Check header signature
         if &raw[0..4] != NES_TAG {
             return Err("File is not in iNES format".to_string());
         }
@@ -54,7 +53,7 @@ impl Rom {
         })
     }
 }
-
+// AI SLOP
 #[cfg(test)]
 mod test {
     use super::*;

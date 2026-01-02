@@ -4,7 +4,8 @@ mod rom;
 
 use cpu::CPU;
 use rom::Rom;
-use std::fs;
+use std::fs::{self, File};
+use std::io::Write;
 
 fn main() {
     // Load the nestest ROM
@@ -14,19 +15,26 @@ fn main() {
     println!("ROM loaded successfully!");
     println!("PRG ROM size: {} bytes", rom.prg_rom.len());
     println!("CHR ROM size: {} bytes", rom.chr_rom.len());
-    println!("Mapper: {}", rom.mapper);
-    println!("Mirroring: {:?}", rom.mirroring);
 
-    // Create CPU and load the ROM
     let mut cpu = CPU::new();
     cpu.load(&rom.prg_rom);
     cpu.reset();
 
-    println!("\nInitial CPU state: {}", cpu);
+    cpu.set_pc(0xC000);
 
-    // Run a few instructions
-    for i in 0..10 {
-        println!("Step {}: {}", i, cpu);
+    let mut log_file = File::create("my_nestest.log").expect("Failed to create log file");
+
+    println!("Running nestest ROM...");
+
+    let max_instructions = 10000; // Safety limit
+    for _ in 0..max_instructions {
+        let trace = cpu.trace();
+        writeln!(log_file, "{}", trace).expect("Failed to write to log");
+
         cpu.step();
     }
+
+    println!("Nestest execution complete!");
+    println!("Output written to my_nestest.log");
+    println!("Compare with: diff my_nestest.log nestest.log");
 }

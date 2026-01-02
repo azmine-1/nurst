@@ -44,11 +44,11 @@ impl Mem for Bus {
 
             PPU_REGISTERS..=PPU_REGISTERS_MIRRORS_END => {
                 let _mirror_addr_down = addr & 0b00100000_000001111;
-                todo!("PPU is not supported yet")
+                self.ram[_mirror_addr_down as usize]
             }
 
             0x8000..=0xFFFF => {
-                let rom_addr = (addr - 0x8000) as usize;
+                let rom_addr = ((addr - 0x8000) % 0x4000) as usize;
                 self.cartridge_rom[rom_addr]
             }
 
@@ -67,7 +67,7 @@ impl Mem for Bus {
             }
             PPU_REGISTERS..=PPU_REGISTERS_MIRRORS_END => {
                 let _mirror_addr_down = addr & 0b00100000_00000111;
-                todo!("PPU is not yet supported");
+                self.ram[_mirror_addr_down as usize] = data;
             }
 
             _ => {
