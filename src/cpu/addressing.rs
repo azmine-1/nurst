@@ -1,5 +1,5 @@
 use super::types::AddressingMode;
-use super::{Mem, CPU};
+use super::{CPU, Mem};
 
 impl CPU {
     pub fn resolve_addr(&mut self, mode: &AddressingMode) -> u16 {
@@ -8,7 +8,7 @@ impl CPU {
                 let offset = self.fetch_byte() as i8;
                 self.program_counter.wrapping_add(offset as u16)
             }
-            AddressingMode::Implied => 0,
+            AddressingMode::Implied | AddressingMode::Accumulator => 0,
             AddressingMode::Immediate => {
                 let addr = self.program_counter;
                 self.program_counter += 1;
@@ -20,7 +20,13 @@ impl CPU {
             AddressingMode::Absolute => self.fetch_word(),
             AddressingMode::Indirect => {
                 let ptr = self.fetch_word();
-                self.mem_read_u16(ptr)
+                if ptr & 0x00FF == 0x00FF {
+                    let lo = self.mem_read(ptr) as u16;
+                    let hi = self.mem_read(ptr & 0xFF00) as u16;
+                    (hi << 8) | lo
+                } else {
+                    self.mem_read_u16(ptr)
+                }
             }
             AddressingMode::AbsoluteX => self.fetch_word().wrapping_add(self.register_x as u16),
             AddressingMode::AbsoluteY => self.fetch_word().wrapping_add(self.register_y as u16),
@@ -35,7 +41,7 @@ impl CPU {
                 ptr.wrapping_add(self.register_y as u16)
             }
             _ => {
-                println!("Addressmode not yet supported");
+                eprintln!("WARNING: Addressmode not yet supported");
                 0
             }
         }

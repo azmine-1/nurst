@@ -1,5 +1,5 @@
 use super::types::{AddressingMode, Flags, Instruction, Opcode};
-use super::{Mem, CPU};
+use super::{CPU, Mem};
 
 impl CPU {
     pub fn adc(&mut self, val: u8, acc: u8) -> u8 {
@@ -303,7 +303,7 @@ impl CPU {
                 self.program_counter = ((high as u16) << 8) | (low as u16);
             }
             Opcode::NOP => {}
-            _ => println!("{:#?} not yet supported", opcode_copy),
+            _ => eprintln!("WARNING: Opcode {:#?} not yet supported", opcode_copy),
         }
     }
 }

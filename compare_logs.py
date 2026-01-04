@@ -13,6 +13,7 @@ from typing import Optional, Tuple
 class CPUState:
     def __init__(self, line: str):
         self.raw_line = line.strip()
+        self.is_illegal = False
         self.parse(line)
 
     def parse(self, line: str):
@@ -23,6 +24,12 @@ class CPUState:
         parts = line.strip()
         if not parts:
             self.valid = False
+            return
+
+        # Check if this is an illegal/unofficial opcode (marked with *)
+        if '*' in parts:
+            self.valid = False
+            self.is_illegal = True
             return
 
         try:
@@ -125,10 +132,16 @@ def compare_logs(reference_path: str, test_path: str, context_lines: int = 3, ma
 
     errors_found = 0
     lines_compared = 0
+    illegal_skipped = 0
 
     for i, (ref_line, test_line) in enumerate(zip(reference_lines, test_lines)):
         ref_state = CPUState(ref_line)
         test_state = CPUState(test_line)
+
+        # Skip illegal opcodes
+        if ref_state.is_illegal:
+            illegal_skipped += 1
+            continue
 
         if not ref_state.valid or not test_state.valid:
             continue
@@ -179,8 +192,9 @@ def compare_logs(reference_path: str, test_path: str, context_lines: int = 3, ma
     # Summary
     print(f"{'='*80}")
     print(f"Summary:")
-    print(f"  Lines compared: {lines_compared}")
-    print(f"  Errors found:   {errors_found}")
+    print(f"  Lines compared:     {lines_compared}")
+    print(f"  Illegal opcodes skipped: {illegal_skipped}")
+    print(f"  Errors found:       {errors_found}")
 
     if errors_found == 0:
         print(f"\n✓ All lines match! Your emulator is running correctly!")

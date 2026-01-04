@@ -59,7 +59,7 @@ impl Mem for Bus {
             }
 
             _ => {
-                println!("Ignoring mem access at {:#06X}", addr);
+                eprintln!("WARNING: Ignoring mem access at {:#06X}", addr);
                 0
             }
         }
@@ -74,7 +74,7 @@ impl Mem for Bus {
             PPU_REGISTERS..=PPU_REGISTERS_MIRRORS_END => {}
 
             _ => {
-                println!("Ignoring mem write-access at {}", addr);
+                eprintln!("WARNING: Ignoring mem write-access at {}", addr);
             }
         }
     }

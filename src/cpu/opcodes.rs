@@ -1,3 +1,5 @@
+use std::ops::Add;
+
 use super::types::{AddressingMode, Instruction, Opcode};
 
 pub fn decode(opcode: u8) -> Instruction {
