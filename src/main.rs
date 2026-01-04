@@ -3,6 +3,7 @@ mod cpu;
 mod rom;
 
 use cpu::CPU;
+use ppu::PPU;
 use rom::Rom;
 use std::fs::{self, File};
 use std::io::Write;
