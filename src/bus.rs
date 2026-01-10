@@ -1,4 +1,5 @@
 use crate::cpu::Mem;
+use crate::ppu::PPU;
 const RAM: u16 = 0x0000;
 const RAM_MIRRORS_END: u16 = 0x1FFF;
 const PPU_REGISTERS: u16 = 0x2000;
@@ -9,6 +10,7 @@ pub struct Bus {
     ppu_registers: [u8; 8],
     apu_io: [u8; 24],
     cartridge_rom: [u8; 32768],
+    ppu: PPU,
 }
 
 impl Bus {
@@ -18,6 +20,7 @@ impl Bus {
             ppu_registers: [0; 8],
             apu_io: [0; 24],
             cartridge_rom: [0; 32768],
+            ppu: PPU::new(),
         }
     }
 
@@ -38,6 +41,11 @@ impl Bus {
         let hi = self.mem_read(pos.wrapping_add(1) as u16);
         (hi as u16) << 8 | (lo as u16)
     }
+
+    pub fn read_register(&self, addr: u16) -> u8 {
+        let register_index = addr & 0x0007;
+        self.ppu.read_register(register_index)
+    }
 }
 
 impl Mem for Bus {
@@ -49,9 +57,10 @@ impl Mem for Bus {
             }
 
             PPU_REGISTERS..=PPU_REGISTERS_MIRRORS_END => {
-                let _mirror_addr_down = addr & 0b00100000_000001111;
-                0
+                let _mirror_addr_down = addr & 0x0007;
+                self.ppu.cpu_read(_mirror_addr_down)
             }
+            0x4000..=0x4017 => self.read_apu_io(addr),
 
             0x8000..=0xFFFF => {
                 let rom_addr = ((addr - 0x8000) % 0x4000) as usize;
@@ -71,7 +80,10 @@ impl Mem for Bus {
                 let mirror_down_addr = addr & 0b00000111_11111111;
                 self.ram[mirror_down_addr as usize] = data;
             }
-            PPU_REGISTERS..=PPU_REGISTERS_MIRRORS_END => {}
+            PPU_REGISTERS..=PPU_REGISTERS_MIRRORS_END => {
+                let _mirror_down_addr = addr & 0x007;
+                self.ppu.cpu_write(_mirror_down_addr)
+            }
 
             _ => {
                 eprintln!("WARNING: Ignoring mem write-access at {}", addr);
