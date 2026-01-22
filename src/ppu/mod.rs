@@ -32,46 +32,43 @@ impl PPU {
             addr: 0,
             data: 0,
             oam_dma: u8,
-            io_db: Bus,
-            vram: [u8; 2000],
-            palette_mem: [u8; 32],
-            v: u8,
-            x: u8,
-            t: u8,
-            w: u8,
-            cycles: u8,
+            vram: [0; 2000],
+            palette_mem: [0; 32],
+            v: 0,
+            x: 0,
+            t: 0,
+            w: 0,
+            cycles: 0,
         }
     }
-    pub fn cpu_read(&self) -> u16 {
-        if self.ctrl & 0x04 != 0 { 32 } else { 1 }
-    }
-    pub fn cpu_read(&self, addr: u16) -> u8 {
-        match addr {
+    pub fn cpu_read(&mut self, addr: u16) -> u8 {
+        match addr & 0x007 {
             0 | 1 | 3 | 5 | 6 => 0,
             2 => {
-                let result = (self.status & 0xE0) | (self.data);
-                self.status &= !0x80;
+                let result = (self.status & 0xE0) | (self.data & 0x1F);
+                self.status &= 0x7F;
                 self.w = false;
                 result
             }
             4 => self.oam[self.oam_addr as usize],
-
             7 => {
                 let addr = self.v;
                 let result = if addr < 0x3F00 {
-                    let buffered = self.data_buffer;
-                    self.data = self.ppu_read(addr);
+                    let buffered = self.data;
+                    self.data = self.read(addr);
                     buffered
                 } else {
-                    self.data = self.ppu_read(addr - 0x1000);
-                    self.ppu_read(addr)
+                    self.read(addr)
                 };
-                self.v = self.v.wrapping_add(self.vram_increment());
+                self.v = self.v.wrapping_add(self.v_increment());
+                result
             }
+            _ => 0,
         }
     }
-    pub fn cpu_write(&self, addr: u16, val: u8) {
-        match addr {
+
+    pub fn cpu_write(&mut self, addr: u16) {
+        match addr & 0x007 {
             0 => {}
         }
     }
