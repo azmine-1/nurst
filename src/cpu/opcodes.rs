@@ -1,871 +1,320 @@
-use std::ops::Add;
-
 use super::types::{AddressingMode, Instruction, Opcode};
 
+use AddressingMode::{
+    Absolute as ABS, AbsoluteX as ABX, AbsoluteY as ABY, Accumulator as ACC, Immediate as IMM,
+    Implied as IMP, Indirect as IND, IndirectX as IZX, IndirectY as IZY, Relative as REL,
+    ZeroPage as ZP0, ZeroPageX as ZPX, ZeroPageY as ZPY,
+};
+use Opcode::*;
+
+const fn op(opcode: Opcode, addressing_mode: AddressingMode, cycles: u8) -> Instruction {
+    Instruction { opcode, addressing_mode, cycles, page_penalty: false, illegal: false }
+}
+
+/// An instruction that costs one extra cycle when indexing crosses a page.
+const fn page(opcode: Opcode, addressing_mode: AddressingMode, cycles: u8) -> Instruction {
+    Instruction { opcode, addressing_mode, cycles, page_penalty: true, illegal: false }
+}
+
+/// An unofficial opcode, traced with a leading `*`.
+const fn ill(opcode: Opcode, addressing_mode: AddressingMode, cycles: u8) -> Instruction {
+    Instruction { opcode, addressing_mode, cycles, page_penalty: false, illegal: true }
+}
+
+const fn ill_page(opcode: Opcode, addressing_mode: AddressingMode, cycles: u8) -> Instruction {
+    Instruction { opcode, addressing_mode, cycles, page_penalty: true, illegal: true }
+}
+
+/// Every 6502 opcode, official and unofficial, indexed by its byte value.
+#[rustfmt::skip]
+const OPCODES: [Instruction; 256] = [
+    /* 00 */ op(BRK, IMP, 7),
+    /* 01 */ op(ORA, IZX, 6),
+    /* 02 */ ill(JAM, IMP, 2),
+    /* 03 */ ill(SLO, IZX, 8),
+    /* 04 */ ill(NOP, ZP0, 3),
+    /* 05 */ op(ORA, ZP0, 3),
+    /* 06 */ op(ASL, ZP0, 5),
+    /* 07 */ ill(SLO, ZP0, 5),
+    /* 08 */ op(PHP, IMP, 3),
+    /* 09 */ op(ORA, IMM, 2),
+    /* 0A */ op(ASL, ACC, 2),
+    /* 0B */ ill(ANC, IMM, 2),
+    /* 0C */ ill(NOP, ABS, 4),
+    /* 0D */ op(ORA, ABS, 4),
+    /* 0E */ op(ASL, ABS, 6),
+    /* 0F */ ill(SLO, ABS, 6),
+    /* 10 */ op(BPL, REL, 2),
+    /* 11 */ page(ORA, IZY, 5),
+    /* 12 */ ill(JAM, IMP, 2),
+    /* 13 */ ill(SLO, IZY, 8),
+    /* 14 */ ill(NOP, ZPX, 4),
+    /* 15 */ op(ORA, ZPX, 4),
+    /* 16 */ op(ASL, ZPX, 6),
+    /* 17 */ ill(SLO, ZPX, 6),
+    /* 18 */ op(CLC, IMP, 2),
+    /* 19 */ page(ORA, ABY, 4),
+    /* 1A */ ill(NOP, IMP, 2),
+    /* 1B */ ill(SLO, ABY, 7),
+    /* 1C */ ill_page(NOP, ABX, 4),
+    /* 1D */ page(ORA, ABX, 4),
+    /* 1E */ op(ASL, ABX, 7),
+    /* 1F */ ill(SLO, ABX, 7),
+    /* 20 */ op(JSR, ABS, 6),
+    /* 21 */ op(AND, IZX, 6),
+    /* 22 */ ill(JAM, IMP, 2),
+    /* 23 */ ill(RLA, IZX, 8),
+    /* 24 */ op(BIT, ZP0, 3),
+    /* 25 */ op(AND, ZP0, 3),
+    /* 26 */ op(ROL, ZP0, 5),
+    /* 27 */ ill(RLA, ZP0, 5),
+    /* 28 */ op(PLP, IMP, 4),
+    /* 29 */ op(AND, IMM, 2),
+    /* 2A */ op(ROL, ACC, 2),
+    /* 2B */ ill(ANC, IMM, 2),
+    /* 2C */ op(BIT, ABS, 4),
+    /* 2D */ op(AND, ABS, 4),
+    /* 2E */ op(ROL, ABS, 6),
+    /* 2F */ ill(RLA, ABS, 6),
+    /* 30 */ op(BMI, REL, 2),
+    /* 31 */ page(AND, IZY, 5),
+    /* 32 */ ill(JAM, IMP, 2),
+    /* 33 */ ill(RLA, IZY, 8),
+    /* 34 */ ill(NOP, ZPX, 4),
+    /* 35 */ op(AND, ZPX, 4),
+    /* 36 */ op(ROL, ZPX, 6),
+    /* 37 */ ill(RLA, ZPX, 6),
+    /* 38 */ op(SEC, IMP, 2),
+    /* 39 */ page(AND, ABY, 4),
+    /* 3A */ ill(NOP, IMP, 2),
+    /* 3B */ ill(RLA, ABY, 7),
+    /* 3C */ ill_page(NOP, ABX, 4),
+    /* 3D */ page(AND, ABX, 4),
+    /* 3E */ op(ROL, ABX, 7),
+    /* 3F */ ill(RLA, ABX, 7),
+    /* 40 */ op(RTI, IMP, 6),
+    /* 41 */ op(EOR, IZX, 6),
+    /* 42 */ ill(JAM, IMP, 2),
+    /* 43 */ ill(SRE, IZX, 8),
+    /* 44 */ ill(NOP, ZP0, 3),
+    /* 45 */ op(EOR, ZP0, 3),
+    /* 46 */ op(LSR, ZP0, 5),
+    /* 47 */ ill(SRE, ZP0, 5),
+    /* 48 */ op(PHA, IMP, 3),
+    /* 49 */ op(EOR, IMM, 2),
+    /* 4A */ op(LSR, ACC, 2),
+    /* 4B */ ill(ALR, IMM, 2),
+    /* 4C */ op(JMP, ABS, 3),
+    /* 4D */ op(EOR, ABS, 4),
+    /* 4E */ op(LSR, ABS, 6),
+    /* 4F */ ill(SRE, ABS, 6),
+    /* 50 */ op(BVC, REL, 2),
+    /* 51 */ page(EOR, IZY, 5),
+    /* 52 */ ill(JAM, IMP, 2),
+    /* 53 */ ill(SRE, IZY, 8),
+    /* 54 */ ill(NOP, ZPX, 4),
+    /* 55 */ op(EOR, ZPX, 4),
+    /* 56 */ op(LSR, ZPX, 6),
+    /* 57 */ ill(SRE, ZPX, 6),
+    /* 58 */ op(CLI, IMP, 2),
+    /* 59 */ page(EOR, ABY, 4),
+    /* 5A */ ill(NOP, IMP, 2),
+    /* 5B */ ill(SRE, ABY, 7),
+    /* 5C */ ill_page(NOP, ABX, 4),
+    /* 5D */ page(EOR, ABX, 4),
+    /* 5E */ op(LSR, ABX, 7),
+    /* 5F */ ill(SRE, ABX, 7),
+    /* 60 */ op(RTS, IMP, 6),
+    /* 61 */ op(ADC, IZX, 6),
+    /* 62 */ ill(JAM, IMP, 2),
+    /* 63 */ ill(RRA, IZX, 8),
+    /* 64 */ ill(NOP, ZP0, 3),
+    /* 65 */ op(ADC, ZP0, 3),
+    /* 66 */ op(ROR, ZP0, 5),
+    /* 67 */ ill(RRA, ZP0, 5),
+    /* 68 */ op(PLA, IMP, 4),
+    /* 69 */ op(ADC, IMM, 2),
+    /* 6A */ op(ROR, ACC, 2),
+    /* 6B */ ill(ARR, IMM, 2),
+    /* 6C */ op(JMP, IND, 5),
+    /* 6D */ op(ADC, ABS, 4),
+    /* 6E */ op(ROR, ABS, 6),
+    /* 6F */ ill(RRA, ABS, 6),
+    /* 70 */ op(BVS, REL, 2),
+    /* 71 */ page(ADC, IZY, 5),
+    /* 72 */ ill(JAM, IMP, 2),
+    /* 73 */ ill(RRA, IZY, 8),
+    /* 74 */ ill(NOP, ZPX, 4),
+    /* 75 */ op(ADC, ZPX, 4),
+    /* 76 */ op(ROR, ZPX, 6),
+    /* 77 */ ill(RRA, ZPX, 6),
+    /* 78 */ op(SEI, IMP, 2),
+    /* 79 */ page(ADC, ABY, 4),
+    /* 7A */ ill(NOP, IMP, 2),
+    /* 7B */ ill(RRA, ABY, 7),
+    /* 7C */ ill_page(NOP, ABX, 4),
+    /* 7D */ page(ADC, ABX, 4),
+    /* 7E */ op(ROR, ABX, 7),
+    /* 7F */ ill(RRA, ABX, 7),
+    /* 80 */ ill(NOP, IMM, 2),
+    /* 81 */ op(STA, IZX, 6),
+    /* 82 */ ill(NOP, IMM, 2),
+    /* 83 */ ill(SAX, IZX, 6),
+    /* 84 */ op(STY, ZP0, 3),
+    /* 85 */ op(STA, ZP0, 3),
+    /* 86 */ op(STX, ZP0, 3),
+    /* 87 */ ill(SAX, ZP0, 3),
+    /* 88 */ op(DEY, IMP, 2),
+    /* 89 */ ill(NOP, IMM, 2),
+    /* 8A */ op(TXA, IMP, 2),
+    /* 8B */ ill(XAA, IMM, 2),
+    /* 8C */ op(STY, ABS, 4),
+    /* 8D */ op(STA, ABS, 4),
+    /* 8E */ op(STX, ABS, 4),
+    /* 8F */ ill(SAX, ABS, 4),
+    /* 90 */ op(BCC, REL, 2),
+    /* 91 */ op(STA, IZY, 6),
+    /* 92 */ ill(JAM, IMP, 2),
+    /* 93 */ ill(AHX, IZY, 6),
+    /* 94 */ op(STY, ZPX, 4),
+    /* 95 */ op(STA, ZPX, 4),
+    /* 96 */ op(STX, ZPY, 4),
+    /* 97 */ ill(SAX, ZPY, 4),
+    /* 98 */ op(TYA, IMP, 2),
+    /* 99 */ op(STA, ABY, 5),
+    /* 9A */ op(TXS, IMP, 2),
+    /* 9B */ ill(TAS, ABY, 5),
+    /* 9C */ ill(SHY, ABX, 5),
+    /* 9D */ op(STA, ABX, 5),
+    /* 9E */ ill(SHX, ABY, 5),
+    /* 9F */ ill(AHX, ABY, 5),
+    /* A0 */ op(LDY, IMM, 2),
+    /* A1 */ op(LDA, IZX, 6),
+    /* A2 */ op(LDX, IMM, 2),
+    /* A3 */ ill(LAX, IZX, 6),
+    /* A4 */ op(LDY, ZP0, 3),
+    /* A5 */ op(LDA, ZP0, 3),
+    /* A6 */ op(LDX, ZP0, 3),
+    /* A7 */ ill(LAX, ZP0, 3),
+    /* A8 */ op(TAY, IMP, 2),
+    /* A9 */ op(LDA, IMM, 2),
+    /* AA */ op(TAX, IMP, 2),
+    /* AB */ ill(LAX, IMM, 2),
+    /* AC */ op(LDY, ABS, 4),
+    /* AD */ op(LDA, ABS, 4),
+    /* AE */ op(LDX, ABS, 4),
+    /* AF */ ill(LAX, ABS, 4),
+    /* B0 */ op(BCS, REL, 2),
+    /* B1 */ page(LDA, IZY, 5),
+    /* B2 */ ill(JAM, IMP, 2),
+    /* B3 */ ill_page(LAX, IZY, 5),
+    /* B4 */ op(LDY, ZPX, 4),
+    /* B5 */ op(LDA, ZPX, 4),
+    /* B6 */ op(LDX, ZPY, 4),
+    /* B7 */ ill(LAX, ZPY, 4),
+    /* B8 */ op(CLV, IMP, 2),
+    /* B9 */ page(LDA, ABY, 4),
+    /* BA */ op(TSX, IMP, 2),
+    /* BB */ ill_page(LAS, ABY, 4),
+    /* BC */ page(LDY, ABX, 4),
+    /* BD */ page(LDA, ABX, 4),
+    /* BE */ page(LDX, ABY, 4),
+    /* BF */ ill_page(LAX, ABY, 4),
+    /* C0 */ op(CPY, IMM, 2),
+    /* C1 */ op(CMP, IZX, 6),
+    /* C2 */ ill(NOP, IMM, 2),
+    /* C3 */ ill(DCP, IZX, 8),
+    /* C4 */ op(CPY, ZP0, 3),
+    /* C5 */ op(CMP, ZP0, 3),
+    /* C6 */ op(DEC, ZP0, 5),
+    /* C7 */ ill(DCP, ZP0, 5),
+    /* C8 */ op(INY, IMP, 2),
+    /* C9 */ op(CMP, IMM, 2),
+    /* CA */ op(DEX, IMP, 2),
+    /* CB */ ill(AXS, IMM, 2),
+    /* CC */ op(CPY, ABS, 4),
+    /* CD */ op(CMP, ABS, 4),
+    /* CE */ op(DEC, ABS, 6),
+    /* CF */ ill(DCP, ABS, 6),
+    /* D0 */ op(BNE, REL, 2),
+    /* D1 */ page(CMP, IZY, 5),
+    /* D2 */ ill(JAM, IMP, 2),
+    /* D3 */ ill(DCP, IZY, 8),
+    /* D4 */ ill(NOP, ZPX, 4),
+    /* D5 */ op(CMP, ZPX, 4),
+    /* D6 */ op(DEC, ZPX, 6),
+    /* D7 */ ill(DCP, ZPX, 6),
+    /* D8 */ op(CLD, IMP, 2),
+    /* D9 */ page(CMP, ABY, 4),
+    /* DA */ ill(NOP, IMP, 2),
+    /* DB */ ill(DCP, ABY, 7),
+    /* DC */ ill_page(NOP, ABX, 4),
+    /* DD */ page(CMP, ABX, 4),
+    /* DE */ op(DEC, ABX, 7),
+    /* DF */ ill(DCP, ABX, 7),
+    /* E0 */ op(CPX, IMM, 2),
+    /* E1 */ op(SBC, IZX, 6),
+    /* E2 */ ill(NOP, IMM, 2),
+    /* E3 */ ill(ISB, IZX, 8),
+    /* E4 */ op(CPX, ZP0, 3),
+    /* E5 */ op(SBC, ZP0, 3),
+    /* E6 */ op(INC, ZP0, 5),
+    /* E7 */ ill(ISB, ZP0, 5),
+    /* E8 */ op(INX, IMP, 2),
+    /* E9 */ op(SBC, IMM, 2),
+    /* EA */ op(NOP, IMP, 2),
+    /* EB */ ill(SBC, IMM, 2),
+    /* EC */ op(CPX, ABS, 4),
+    /* ED */ op(SBC, ABS, 4),
+    /* EE */ op(INC, ABS, 6),
+    /* EF */ ill(ISB, ABS, 6),
+    /* F0 */ op(BEQ, REL, 2),
+    /* F1 */ page(SBC, IZY, 5),
+    /* F2 */ ill(JAM, IMP, 2),
+    /* F3 */ ill(ISB, IZY, 8),
+    /* F4 */ ill(NOP, ZPX, 4),
+    /* F5 */ op(SBC, ZPX, 4),
+    /* F6 */ op(INC, ZPX, 6),
+    /* F7 */ ill(ISB, ZPX, 6),
+    /* F8 */ op(SED, IMP, 2),
+    /* F9 */ page(SBC, ABY, 4),
+    /* FA */ ill(NOP, IMP, 2),
+    /* FB */ ill(ISB, ABY, 7),
+    /* FC */ ill_page(NOP, ABX, 4),
+    /* FD */ page(SBC, ABX, 4),
+    /* FE */ op(INC, ABX, 7),
+    /* FF */ ill(ISB, ABX, 7),
+];
+
 pub fn decode(opcode: u8) -> Instruction {
-    match opcode {
-        // BRK
-        0x00 => Instruction {
-            opcode: Opcode::BRK,
-            addressing_mode: AddressingMode::Implied,
-            cycles: 7,
-        },
+    OPCODES[opcode as usize]
+}
 
-        // ORA variants
-        0x01 => Instruction {
-            opcode: Opcode::ORA,
-            addressing_mode: AddressingMode::IndirectX,
-            cycles: 6,
-        },
-        0x05 => Instruction {
-            opcode: Opcode::ORA,
-            addressing_mode: AddressingMode::ZeroPage,
-            cycles: 3,
-        },
-        0x09 => Instruction {
-            opcode: Opcode::ORA,
-            addressing_mode: AddressingMode::Immediate,
-            cycles: 2,
-        },
-        0x0D => Instruction {
-            opcode: Opcode::ORA,
-            addressing_mode: AddressingMode::Absolute,
-            cycles: 4,
-        },
-        0x11 => Instruction {
-            opcode: Opcode::ORA,
-            addressing_mode: AddressingMode::IndirectY,
-            cycles: 5,
-        },
-        0x15 => Instruction {
-            opcode: Opcode::ORA,
-            addressing_mode: AddressingMode::ZeroPageX,
-            cycles: 4,
-        },
-        0x19 => Instruction {
-            opcode: Opcode::ORA,
-            addressing_mode: AddressingMode::AbsoluteY,
-            cycles: 4,
-        },
-        0x1D => Instruction {
-            opcode: Opcode::ORA,
-            addressing_mode: AddressingMode::AbsoluteX,
-            cycles: 4,
-        },
+#[cfg(test)]
+mod test {
+    use super::*;
 
-        // ASL variants
-        0x06 => Instruction {
-            opcode: Opcode::ASL,
-            addressing_mode: AddressingMode::ZeroPage,
-            cycles: 5,
-        },
-        0x0A => Instruction {
-            opcode: Opcode::ASL,
-            addressing_mode: AddressingMode::Accumulator,
-            cycles: 2,
-        },
-        0x0E => Instruction {
-            opcode: Opcode::ASL,
-            addressing_mode: AddressingMode::Absolute,
-            cycles: 6,
-        },
-        0x16 => Instruction {
-            opcode: Opcode::ASL,
-            addressing_mode: AddressingMode::ZeroPageX,
-            cycles: 6,
-        },
-        0x1E => Instruction {
-            opcode: Opcode::ASL,
-            addressing_mode: AddressingMode::AbsoluteX,
-            cycles: 7,
-        },
+    #[test]
+    fn every_opcode_decodes() {
+        for byte in 0..=255u8 {
+            let instruction = decode(byte);
+            assert!(instruction.cycles >= 2, "opcode {:02X} has no cycle count", byte);
+        }
+    }
 
-        // PHP
-        0x08 => Instruction {
-            opcode: Opcode::PHP,
-            addressing_mode: AddressingMode::Implied,
-            cycles: 3,
-        },
+    #[test]
+    fn known_opcodes_match_the_datasheet() {
+        let jmp = decode(0x4C);
+        assert_eq!(jmp.opcode, Opcode::JMP);
+        assert_eq!(jmp.addressing_mode, AddressingMode::Absolute);
+        assert_eq!(jmp.cycles, 3);
 
-        // BPL
-        0x10 => Instruction {
-            opcode: Opcode::BPL,
-            addressing_mode: AddressingMode::Relative,
-            cycles: 2,
-        },
+        let lda = decode(0xBD);
+        assert_eq!(lda.opcode, Opcode::LDA);
+        assert_eq!(lda.addressing_mode, AddressingMode::AbsoluteX);
+        assert!(lda.page_penalty);
 
-        // CLC
-        0x18 => Instruction {
-            opcode: Opcode::CLC,
-            addressing_mode: AddressingMode::Implied,
-            cycles: 2,
-        },
-
-        // JSR
-        0x20 => Instruction {
-            opcode: Opcode::JSR,
-            addressing_mode: AddressingMode::Absolute,
-            cycles: 6,
-        },
-
-        // AND variants
-        0x21 => Instruction {
-            opcode: Opcode::AND,
-            addressing_mode: AddressingMode::IndirectX,
-            cycles: 6,
-        },
-        0x24 => Instruction {
-            opcode: Opcode::BIT,
-            addressing_mode: AddressingMode::ZeroPage,
-            cycles: 3,
-        },
-        0x25 => Instruction {
-            opcode: Opcode::AND,
-            addressing_mode: AddressingMode::ZeroPage,
-            cycles: 3,
-        },
-        0x29 => Instruction {
-            opcode: Opcode::AND,
-            addressing_mode: AddressingMode::Immediate,
-            cycles: 2,
-        },
-        0x2A => Instruction {
-            opcode: Opcode::ROL,
-            addressing_mode: AddressingMode::Accumulator,
-            cycles: 2,
-        },
-        0x2C => Instruction {
-            opcode: Opcode::BIT,
-            addressing_mode: AddressingMode::Absolute,
-            cycles: 4,
-        },
-        0x2D => Instruction {
-            opcode: Opcode::AND,
-            addressing_mode: AddressingMode::Absolute,
-            cycles: 4,
-        },
-        0x31 => Instruction {
-            opcode: Opcode::AND,
-            addressing_mode: AddressingMode::IndirectY,
-            cycles: 5,
-        },
-        0x35 => Instruction {
-            opcode: Opcode::AND,
-            addressing_mode: AddressingMode::ZeroPageX,
-            cycles: 4,
-        },
-        0x39 => Instruction {
-            opcode: Opcode::AND,
-            addressing_mode: AddressingMode::AbsoluteY,
-            cycles: 4,
-        },
-        0x3D => Instruction {
-            opcode: Opcode::AND,
-            addressing_mode: AddressingMode::AbsoluteX,
-            cycles: 4,
-        },
-
-        // ROL variants
-        0x26 => Instruction {
-            opcode: Opcode::ROL,
-            addressing_mode: AddressingMode::ZeroPage,
-            cycles: 5,
-        },
-        0x2E => Instruction {
-            opcode: Opcode::ROL,
-            addressing_mode: AddressingMode::Absolute,
-            cycles: 6,
-        },
-        0x36 => Instruction {
-            opcode: Opcode::ROL,
-            addressing_mode: AddressingMode::ZeroPageX,
-            cycles: 6,
-        },
-        0x3E => Instruction {
-            opcode: Opcode::ROL,
-            addressing_mode: AddressingMode::AbsoluteX,
-            cycles: 7,
-        },
-
-        // PLP
-        0x28 => Instruction {
-            opcode: Opcode::PLP,
-            addressing_mode: AddressingMode::Implied,
-            cycles: 4,
-        },
-
-        // SEC
-        0x38 => Instruction {
-            opcode: Opcode::SEC,
-            addressing_mode: AddressingMode::Implied,
-            cycles: 2,
-        },
-
-        // RTI
-        0x40 => Instruction {
-            opcode: Opcode::RTI,
-            addressing_mode: AddressingMode::Implied,
-            cycles: 6,
-        },
-
-        // BMI
-        0x30 => Instruction {
-            opcode: Opcode::BMI,
-            addressing_mode: AddressingMode::Relative,
-            cycles: 2,
-        },
-
-        // EOR variants
-        0x41 => Instruction {
-            opcode: Opcode::EOR,
-            addressing_mode: AddressingMode::IndirectX,
-            cycles: 6,
-        },
-        0x45 => Instruction {
-            opcode: Opcode::EOR,
-            addressing_mode: AddressingMode::ZeroPage,
-            cycles: 3,
-        },
-        0x48 => Instruction {
-            opcode: Opcode::PHA,
-            addressing_mode: AddressingMode::Implied,
-            cycles: 3,
-        },
-        0x49 => Instruction {
-            opcode: Opcode::EOR,
-            addressing_mode: AddressingMode::Immediate,
-            cycles: 2,
-        },
-        0x4A => Instruction {
-            opcode: Opcode::LSR,
-            addressing_mode: AddressingMode::Accumulator,
-            cycles: 2,
-        },
-        0x4C => Instruction {
-            opcode: Opcode::JMP,
-            addressing_mode: AddressingMode::Absolute,
-            cycles: 3,
-        },
-        0x4D => Instruction {
-            opcode: Opcode::EOR,
-            addressing_mode: AddressingMode::Absolute,
-            cycles: 4,
-        },
-        0x51 => Instruction {
-            opcode: Opcode::EOR,
-            addressing_mode: AddressingMode::IndirectY,
-            cycles: 5,
-        },
-        0x55 => Instruction {
-            opcode: Opcode::EOR,
-            addressing_mode: AddressingMode::ZeroPageX,
-            cycles: 4,
-        },
-        0x59 => Instruction {
-            opcode: Opcode::EOR,
-            addressing_mode: AddressingMode::AbsoluteY,
-            cycles: 4,
-        },
-        0x5D => Instruction {
-            opcode: Opcode::EOR,
-            addressing_mode: AddressingMode::AbsoluteX,
-            cycles: 4,
-        },
-
-        // LSR variants
-        0x46 => Instruction {
-            opcode: Opcode::LSR,
-            addressing_mode: AddressingMode::ZeroPage,
-            cycles: 5,
-        },
-        0x4E => Instruction {
-            opcode: Opcode::LSR,
-            addressing_mode: AddressingMode::Absolute,
-            cycles: 6,
-        },
-        0x56 => Instruction {
-            opcode: Opcode::LSR,
-            addressing_mode: AddressingMode::ZeroPageX,
-            cycles: 6,
-        },
-        0x5E => Instruction {
-            opcode: Opcode::LSR,
-            addressing_mode: AddressingMode::AbsoluteX,
-            cycles: 7,
-        },
-
-        // CLI
-        0x58 => Instruction {
-            opcode: Opcode::CLI,
-            addressing_mode: AddressingMode::Implied,
-            cycles: 2,
-        },
-
-        // RTS
-        0x60 => Instruction {
-            opcode: Opcode::RTS,
-            addressing_mode: AddressingMode::Implied,
-            cycles: 6,
-        },
-
-        // BVC
-        0x50 => Instruction {
-            opcode: Opcode::BVC,
-            addressing_mode: AddressingMode::Relative,
-            cycles: 2,
-        },
-
-        // ADC variants
-        0x61 => Instruction {
-            opcode: Opcode::ADC,
-            addressing_mode: AddressingMode::IndirectX,
-            cycles: 6,
-        },
-        0x65 => Instruction {
-            opcode: Opcode::ADC,
-            addressing_mode: AddressingMode::ZeroPage,
-            cycles: 3,
-        },
-        0x68 => Instruction {
-            opcode: Opcode::PLA,
-            addressing_mode: AddressingMode::Implied,
-            cycles: 4,
-        },
-        0x69 => Instruction {
-            opcode: Opcode::ADC,
-            addressing_mode: AddressingMode::Immediate,
-            cycles: 2,
-        },
-        0x6A => Instruction {
-            opcode: Opcode::ROR,
-            addressing_mode: AddressingMode::Accumulator,
-            cycles: 2,
-        },
-        0x6C => Instruction {
-            opcode: Opcode::JMP,
-            addressing_mode: AddressingMode::Indirect,
-            cycles: 5,
-        },
-        0x6D => Instruction {
-            opcode: Opcode::ADC,
-            addressing_mode: AddressingMode::Absolute,
-            cycles: 4,
-        },
-        0x71 => Instruction {
-            opcode: Opcode::ADC,
-            addressing_mode: AddressingMode::IndirectY,
-            cycles: 5,
-        },
-        0x75 => Instruction {
-            opcode: Opcode::ADC,
-            addressing_mode: AddressingMode::ZeroPageX,
-            cycles: 4,
-        },
-        0x79 => Instruction {
-            opcode: Opcode::ADC,
-            addressing_mode: AddressingMode::AbsoluteY,
-            cycles: 4,
-        },
-        0x7D => Instruction {
-            opcode: Opcode::ADC,
-            addressing_mode: AddressingMode::AbsoluteX,
-            cycles: 4,
-        },
-
-        // ROR variants
-        0x66 => Instruction {
-            opcode: Opcode::ROR,
-            addressing_mode: AddressingMode::ZeroPage,
-            cycles: 5,
-        },
-        0x6E => Instruction {
-            opcode: Opcode::ROR,
-            addressing_mode: AddressingMode::Absolute,
-            cycles: 6,
-        },
-        0x76 => Instruction {
-            opcode: Opcode::ROR,
-            addressing_mode: AddressingMode::ZeroPageX,
-            cycles: 6,
-        },
-        0x7E => Instruction {
-            opcode: Opcode::ROR,
-            addressing_mode: AddressingMode::AbsoluteX,
-            cycles: 7,
-        },
-
-        // SEI
-        0x78 => Instruction {
-            opcode: Opcode::SEI,
-            addressing_mode: AddressingMode::Implied,
-            cycles: 2,
-        },
-
-        // BVS
-        0x70 => Instruction {
-            opcode: Opcode::BVS,
-            addressing_mode: AddressingMode::Relative,
-            cycles: 2,
-        },
-
-        // STY variants
-        0x84 => Instruction {
-            opcode: Opcode::STY,
-            addressing_mode: AddressingMode::ZeroPage,
-            cycles: 3,
-        },
-        0x8C => Instruction {
-            opcode: Opcode::STY,
-            addressing_mode: AddressingMode::Absolute,
-            cycles: 4,
-        },
-        0x94 => Instruction {
-            opcode: Opcode::STY,
-            addressing_mode: AddressingMode::ZeroPageX,
-            cycles: 4,
-        },
-
-        // STA variants
-        0x85 => Instruction {
-            opcode: Opcode::STA,
-            addressing_mode: AddressingMode::ZeroPage,
-            cycles: 3,
-        },
-        0x8D => Instruction {
-            opcode: Opcode::STA,
-            addressing_mode: AddressingMode::Absolute,
-            cycles: 4,
-        },
-        0x81 => Instruction {
-            opcode: Opcode::STA,
-            addressing_mode: AddressingMode::IndirectX,
-            cycles: 6,
-        },
-        0x91 => Instruction {
-            opcode: Opcode::STA,
-            addressing_mode: AddressingMode::IndirectY,
-            cycles: 6,
-        },
-        0x95 => Instruction {
-            opcode: Opcode::STA,
-            addressing_mode: AddressingMode::ZeroPageX,
-            cycles: 4,
-        },
-        0x99 => Instruction {
-            opcode: Opcode::STA,
-            addressing_mode: AddressingMode::AbsoluteY,
-            cycles: 5,
-        },
-        0x9D => Instruction {
-            opcode: Opcode::STA,
-            addressing_mode: AddressingMode::AbsoluteX,
-            cycles: 5,
-        },
-
-        // STX variants
-        0x86 => Instruction {
-            opcode: Opcode::STX,
-            addressing_mode: AddressingMode::ZeroPage,
-            cycles: 3,
-        },
-        0x8E => Instruction {
-            opcode: Opcode::STX,
-            addressing_mode: AddressingMode::Absolute,
-            cycles: 4,
-        },
-        0x96 => Instruction {
-            opcode: Opcode::STX,
-            addressing_mode: AddressingMode::ZeroPageY,
-            cycles: 4,
-        },
-
-        // DEY
-        0x88 => Instruction {
-            opcode: Opcode::DEY,
-            addressing_mode: AddressingMode::Implied,
-            cycles: 2,
-        },
-
-        // TXA
-        0x8A => Instruction {
-            opcode: Opcode::TXA,
-            addressing_mode: AddressingMode::Implied,
-            cycles: 2,
-        },
-
-        // BCC
-        0x90 => Instruction {
-            opcode: Opcode::BCC,
-            addressing_mode: AddressingMode::Relative,
-            cycles: 2,
-        },
-
-        // TYA
-        0x98 => Instruction {
-            opcode: Opcode::TYA,
-            addressing_mode: AddressingMode::Implied,
-            cycles: 2,
-        },
-
-        // TXS
-        0x9A => Instruction {
-            opcode: Opcode::TXS,
-            addressing_mode: AddressingMode::Implied,
-            cycles: 2,
-        },
-
-        // LDY variants
-        0xA0 => Instruction {
-            opcode: Opcode::LDY,
-            addressing_mode: AddressingMode::Immediate,
-            cycles: 2,
-        },
-        0xA4 => Instruction {
-            opcode: Opcode::LDY,
-            addressing_mode: AddressingMode::ZeroPage,
-            cycles: 3,
-        },
-        0xAC => Instruction {
-            opcode: Opcode::LDY,
-            addressing_mode: AddressingMode::Absolute,
-            cycles: 4,
-        },
-        0xB4 => Instruction {
-            opcode: Opcode::LDY,
-            addressing_mode: AddressingMode::ZeroPageX,
-            cycles: 4,
-        },
-        0xBC => Instruction {
-            opcode: Opcode::LDY,
-            addressing_mode: AddressingMode::AbsoluteX,
-            cycles: 4,
-        },
-
-        // LDX variants
-        0xA2 => Instruction {
-            opcode: Opcode::LDX,
-            addressing_mode: AddressingMode::Immediate,
-            cycles: 2,
-        },
-        0xA6 => Instruction {
-            opcode: Opcode::LDX,
-            addressing_mode: AddressingMode::ZeroPage,
-            cycles: 3,
-        },
-        0xAE => Instruction {
-            opcode: Opcode::LDX,
-            addressing_mode: AddressingMode::Absolute,
-            cycles: 4,
-        },
-        0xB6 => Instruction {
-            opcode: Opcode::LDX,
-            addressing_mode: AddressingMode::ZeroPageY,
-            cycles: 4,
-        },
-        0xBE => Instruction {
-            opcode: Opcode::LDX,
-            addressing_mode: AddressingMode::AbsoluteY,
-            cycles: 4,
-        },
-
-        // LDA variants
-        0xA5 => Instruction {
-            opcode: Opcode::LDA,
-            addressing_mode: AddressingMode::ZeroPage,
-            cycles: 3,
-        },
-        0xA9 => Instruction {
-            opcode: Opcode::LDA,
-            addressing_mode: AddressingMode::Immediate,
-            cycles: 2,
-        },
-        0xAD => Instruction {
-            opcode: Opcode::LDA,
-            addressing_mode: AddressingMode::Absolute,
-            cycles: 4,
-        },
-        0xA1 => Instruction {
-            opcode: Opcode::LDA,
-            addressing_mode: AddressingMode::IndirectX,
-            cycles: 6,
-        },
-        0xB1 => Instruction {
-            opcode: Opcode::LDA,
-            addressing_mode: AddressingMode::IndirectY,
-            cycles: 5,
-        },
-        0xB5 => Instruction {
-            opcode: Opcode::LDA,
-            addressing_mode: AddressingMode::ZeroPageX,
-            cycles: 4,
-        },
-        0xB9 => Instruction {
-            opcode: Opcode::LDA,
-            addressing_mode: AddressingMode::AbsoluteY,
-            cycles: 4,
-        },
-        0xBD => Instruction {
-            opcode: Opcode::LDA,
-            addressing_mode: AddressingMode::AbsoluteX,
-            cycles: 4,
-        },
-
-        // TAY
-        0xA8 => Instruction {
-            opcode: Opcode::TAY,
-            addressing_mode: AddressingMode::Implied,
-            cycles: 2,
-        },
-
-        // TAX
-        0xAA => Instruction {
-            opcode: Opcode::TAX,
-            addressing_mode: AddressingMode::Implied,
-            cycles: 2,
-        },
-
-        // BCS
-        0xB0 => Instruction {
-            opcode: Opcode::BCS,
-            addressing_mode: AddressingMode::Relative,
-            cycles: 2,
-        },
-
-        // CLV
-        0xB8 => Instruction {
-            opcode: Opcode::CLV,
-            addressing_mode: AddressingMode::Implied,
-            cycles: 2,
-        },
-
-        // TSX
-        0xBA => Instruction {
-            opcode: Opcode::TSX,
-            addressing_mode: AddressingMode::Implied,
-            cycles: 2,
-        },
-
-        // CPY variants
-        0xC0 => Instruction {
-            opcode: Opcode::CPY,
-            addressing_mode: AddressingMode::Immediate,
-            cycles: 2,
-        },
-        0xC4 => Instruction {
-            opcode: Opcode::CPY,
-            addressing_mode: AddressingMode::ZeroPage,
-            cycles: 3,
-        },
-        0xCC => Instruction {
-            opcode: Opcode::CPY,
-            addressing_mode: AddressingMode::Absolute,
-            cycles: 4,
-        },
-
-        // CMP variants
-        0xC9 => Instruction {
-            opcode: Opcode::CMP,
-            addressing_mode: AddressingMode::Immediate,
-            cycles: 2,
-        },
-        0xC1 => Instruction {
-            opcode: Opcode::CMP,
-            addressing_mode: AddressingMode::IndirectX,
-            cycles: 6,
-        },
-        0xC5 => Instruction {
-            opcode: Opcode::CMP,
-            addressing_mode: AddressingMode::ZeroPage,
-            cycles: 3,
-        },
-        0xCD => Instruction {
-            opcode: Opcode::CMP,
-            addressing_mode: AddressingMode::Absolute,
-            cycles: 4,
-        },
-        0xD1 => Instruction {
-            opcode: Opcode::CMP,
-            addressing_mode: AddressingMode::IndirectY,
-            cycles: 5,
-        },
-        0xD5 => Instruction {
-            opcode: Opcode::CMP,
-            addressing_mode: AddressingMode::ZeroPageX,
-            cycles: 4,
-        },
-        0xD9 => Instruction {
-            opcode: Opcode::CMP,
-            addressing_mode: AddressingMode::AbsoluteY,
-            cycles: 4,
-        },
-        0xDD => Instruction {
-            opcode: Opcode::CMP,
-            addressing_mode: AddressingMode::AbsoluteX,
-            cycles: 4,
-        },
-
-        // INY
-        0xC8 => Instruction {
-            opcode: Opcode::INY,
-            addressing_mode: AddressingMode::Implied,
-            cycles: 2,
-        },
-
-        // DEX
-        0xCA => Instruction {
-            opcode: Opcode::DEX,
-            addressing_mode: AddressingMode::Implied,
-            cycles: 2,
-        },
-
-        // BNE
-        0xD0 => Instruction {
-            opcode: Opcode::BNE,
-            addressing_mode: AddressingMode::Relative,
-            cycles: 2,
-        },
-
-        // CLD
-        0xD8 => Instruction {
-            opcode: Opcode::CLD,
-            addressing_mode: AddressingMode::Implied,
-            cycles: 2,
-        },
-
-        // DEC
-        0xC6 => Instruction {
-            opcode: Opcode::DEC,
-            addressing_mode: AddressingMode::ZeroPage,
-            cycles: 5,
-        },
-        0xCE => Instruction {
-            opcode: Opcode::DEC,
-            addressing_mode: AddressingMode::Absolute,
-            cycles: 6,
-        },
-        0xD6 => Instruction {
-            opcode: Opcode::DEC,
-            addressing_mode: AddressingMode::ZeroPageX,
-            cycles: 6,
-        },
-        0xDE => Instruction {
-            opcode: Opcode::DEC,
-            addressing_mode: AddressingMode::AbsoluteX,
-            cycles: 7,
-        },
-
-        // CPX variants
-        0xE0 => Instruction {
-            opcode: Opcode::CPX,
-            addressing_mode: AddressingMode::Immediate,
-            cycles: 2,
-        },
-        0xE4 => Instruction {
-            opcode: Opcode::CPX,
-            addressing_mode: AddressingMode::ZeroPage,
-            cycles: 3,
-        },
-        0xEC => Instruction {
-            opcode: Opcode::CPX,
-            addressing_mode: AddressingMode::Absolute,
-            cycles: 4,
-        },
-
-        // SBC variants
-        0xE9 => Instruction {
-            opcode: Opcode::SBC,
-            addressing_mode: AddressingMode::Immediate,
-            cycles: 2,
-        },
-        0xE1 => Instruction {
-            opcode: Opcode::SBC,
-            addressing_mode: AddressingMode::IndirectX,
-            cycles: 6,
-        },
-        0xE5 => Instruction {
-            opcode: Opcode::SBC,
-            addressing_mode: AddressingMode::ZeroPage,
-            cycles: 3,
-        },
-        0xED => Instruction {
-            opcode: Opcode::SBC,
-            addressing_mode: AddressingMode::Absolute,
-            cycles: 4,
-        },
-        0xF1 => Instruction {
-            opcode: Opcode::SBC,
-            addressing_mode: AddressingMode::IndirectY,
-            cycles: 5,
-        },
-        0xF5 => Instruction {
-            opcode: Opcode::SBC,
-            addressing_mode: AddressingMode::ZeroPageX,
-            cycles: 4,
-        },
-        0xF9 => Instruction {
-            opcode: Opcode::SBC,
-            addressing_mode: AddressingMode::AbsoluteY,
-            cycles: 4,
-        },
-        0xFD => Instruction {
-            opcode: Opcode::SBC,
-            addressing_mode: AddressingMode::AbsoluteX,
-            cycles: 4,
-        },
-
-        // INX
-        0xE8 => Instruction {
-            opcode: Opcode::INX,
-            addressing_mode: AddressingMode::Implied,
-            cycles: 2,
-        },
-
-        // NOP
-        0xEA => Instruction {
-            opcode: Opcode::NOP,
-            addressing_mode: AddressingMode::Implied,
-            cycles: 2,
-        },
-
-        // BEQ
-        0xF0 => Instruction {
-            opcode: Opcode::BEQ,
-            addressing_mode: AddressingMode::Relative,
-            cycles: 2,
-        },
-
-        // SED
-        0xF8 => Instruction {
-            opcode: Opcode::SED,
-            addressing_mode: AddressingMode::Implied,
-            cycles: 2,
-        },
-
-        // INC
-        0xE6 => Instruction {
-            opcode: Opcode::INC,
-            addressing_mode: AddressingMode::ZeroPage,
-            cycles: 5,
-        },
-        0xEE => Instruction {
-            opcode: Opcode::INC,
-            addressing_mode: AddressingMode::Absolute,
-            cycles: 6,
-        },
-        0xF6 => Instruction {
-            opcode: Opcode::INC,
-            addressing_mode: AddressingMode::ZeroPageX,
-            cycles: 6,
-        },
-        0xFE => Instruction {
-            opcode: Opcode::INC,
-            addressing_mode: AddressingMode::AbsoluteX,
-            cycles: 7,
-        },
-        _ => Instruction {
-            opcode: Opcode::Unknown,
-            addressing_mode: AddressingMode::Indirect,
-            cycles: 0,
-        },
+        assert!(decode(0xEB).illegal, "$EB is the unofficial SBC");
+        assert!(!decode(0xEA).illegal, "$EA is the official NOP");
     }
 }
