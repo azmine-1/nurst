@@ -20,6 +20,7 @@ Thumbs.db
 # === NES Emulator Specific ===
 roms/
 *.nes
+!demo/nurstrunner.nes
 *.log
 output.log
 
@@ -28,3 +29,4 @@ output.log
 # already existing elements were commented out
 
 #/target
+*.asm
