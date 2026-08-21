@@ -30,3 +30,8 @@ output.log
 
 #/target
 *.asm
+!demo/*.asm
+
+# Python bytecode
+__pycache__/
+*.pyc
