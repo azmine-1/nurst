@@ -41,7 +41,6 @@ impl Bus {
     pub fn read(&mut self, addr: u16) -> u8 {
         self.tick(1);
         self.read_untimed(addr)
-    }
 
     pub fn write(&mut self, addr: u16, data: u8) {
         self.tick(1);
