@@ -1,3 +1,4 @@
+#[derive(Clone, Copy)]
 pub enum Flags {
     C = (1 << 0), // Carry flag
     Z = (1 << 1), // Zero flag
@@ -25,6 +26,23 @@ pub enum AddressingMode {
     Indirect,
     IndirectX,
     IndirectY,
+}
+
+impl AddressingMode {
+    /// Total instruction length in bytes, opcode included.
+    pub fn length(self) -> u16 {
+        match self {
+            AddressingMode::Implied | AddressingMode::Accumulator => 1,
+            AddressingMode::Immediate
+            | AddressingMode::ZeroPage
+            | AddressingMode::ZeroPageX
+            | AddressingMode::ZeroPageY
+            | AddressingMode::Relative
+            | AddressingMode::IndirectX
+            | AddressingMode::IndirectY => 2,
+            _ => 3,
+        }
+    }
 }
 
 #[repr(u8)]
@@ -63,13 +81,21 @@ pub enum Opcode {
     // Stack Operations
     PHA, PHP, PLA, PLP,
 
-    // Other
     NOP,
-    Unknown,
+
+    // Unofficial opcodes. The first group is stable and used by real games;
+    // the second is unstable and only shows up in test ROMs.
+    LAX, SAX, DCP, ISB, SLO, RLA, SRE, RRA,
+    ANC, ALR, ARR, AXS, XAA, LAS, AHX, SHY, SHX, TAS, JAM,
 }
 
+#[derive(Clone, Copy)]
 pub struct Instruction {
     pub opcode: Opcode,
     pub addressing_mode: AddressingMode,
     pub cycles: u8,
+    /// Instruction takes one extra cycle when indexing crosses a page boundary.
+    pub page_penalty: bool,
+    /// Unofficial opcode; traced with a leading `*` like nestest does.
+    pub illegal: bool,
 }
